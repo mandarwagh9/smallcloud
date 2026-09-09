@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Development happens on Windows and production runs on Linux, and the isolation
+        # boundary behaves differently on each. Both have caught bugs the other could not.
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # >= 22.15 for module.registerHooks, which blocks apps from loading node:sqlite.
+          # On anything older the isolation test skips instead of passing; see SECURITY.md.
+          node-version: '22.15'
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - name: Fail if the isolation test only skipped
+        shell: bash
+        run: |
+          node -e "const m=require('node:module'); if (typeof m.registerHooks !== 'function') { console.error('This Node lacks module.registerHooks, so the node:sqlite isolation test cannot pass. See SECURITY.md.'); process.exit(1); }"
+      - run: npm test
+
+  isolation:
+    name: OS-level isolation (Linux container)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the test image
+        run: docker build -f Dockerfile.test -t smallcloud-test .
+      - name: Full suite plus the SC_APP_UID boundary
+        run: docker run --rm smallcloud-test
+      - name: Production image builds and boots
+        run: |
+          docker build -t smallcloud-prod .
+          docker run -d --name sc-ci -e SC_BASE_URL=http://127.0.0.1:8787 -e SC_SECRET=ci-secret smallcloud-prod
+          for i in $(seq 1 30); do
+            docker exec sc-ci node -e "fetch('http://127.0.0.1:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" && break
+            sleep 2
+          done
+          echo "--- the app user must not be able to read the platform database ---"
+          docker cp scripts/kernel-probe.cjs sc-ci:/tmp/probe.cjs
+          out=$(docker exec sc-ci sh -lc 'su -s /bin/sh scapp -c "node --no-warnings /tmp/probe.cjs /data/platform.db"')
+          echo "$out"
+          case "$out" in
+            "blocked by kernel"*) echo "ok" ;;
+            *) echo "FAIL: the app user reached the platform database"; exit 1 ;;
+          esac
+          echo "--- platform.db must be 0600 ---"
+          docker exec sc-ci sh -lc 'test "$(stat -c %a /data/platform.db)" = "600"'
+          docker rm -f sc-ci

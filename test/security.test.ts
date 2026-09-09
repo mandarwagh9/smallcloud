@@ -2,8 +2,11 @@
 // See docs/PLAN.md 6.5. If any of these fail, the isolation story is broken, not the test.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { writeFileSync, mkdirSync, existsSync, mkdtempSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { spawnSync } from 'node:child_process';
+import * as nodeModule from 'node:module'; // namespace: registerHooks does not exist before 22.15
 import { startHarness, deploy, bundle, type Harness } from './helpers.js';
 
 let h: Harness;
@@ -236,8 +239,10 @@ test('an app cannot read the platform database through node:sqlite', async (t) =
        return { json: { result: 'LEAKED', rows: db.prepare('select email from api_tokens').all().length } };
      } catch (e) { return { json: { result: 'blocked', code: e.code ?? e.message } }; }`,
   );
-  const { BUILTINS_BLOCKED } = await import('../src/sandbox-host.mjs');
-  if (!BUILTINS_BLOCKED) {
+  // Detect the capability directly. Importing sandbox-host.mjs here would install its loader
+  // hooks in the test runner itself, blocking every later `import('node:...')` in this file.
+  const builtinsBlocked = typeof nodeModule.registerHooks === 'function';
+  if (!builtinsBlocked) {
     // Do not pretend this passes. It is a real, open hole on this Node version.
     t.diagnostic(
       `KNOWN GAP: Node ${process.versions.node} has no module.registerHooks, so an app that ` +
@@ -248,4 +253,32 @@ test('an app cannot read the platform database through node:sqlite', async (t) =
     return;
   }
   assert.equal(body.result, 'blocked', 'an app read the platform database via node:sqlite');
+});
+
+// Node matches --allow-fs-* grants by path prefix, so a grant on ".../apps/aa" could also
+// cover ".../apps/aaa" unless it ends with a separator. App ids are fixed-length, so this is
+// latent rather than live -- but the runtime appends the separator and this proves it works.
+test('a filesystem grant does not leak into a sibling directory with a longer name', () => {
+  const root = mkdtempSync(join(tmpdir(), 'sc-prefix-'));
+  const granted = join(root, 'aa');
+  const sibling = join(root, 'aaa');
+  mkdirSync(granted, { recursive: true });
+  mkdirSync(sibling, { recursive: true });
+  const secret = join(sibling, 'secret.txt');
+  writeFileSync(secret, 'this belongs to the other app');
+  const probe = join(granted, 'probe.cjs');
+  writeFileSync(
+    probe,
+    'const fs=require("node:fs");' +
+      'try{fs.readFileSync(process.argv[2]);console.log("LEAKED")}' +
+      'catch(e){console.log("blocked:"+(e.code||e.message))}',
+  );
+
+  const SEP = String.fromCharCode(92); // backslash, without an escape the tooling can mangle
+  const withSeparator = granted.endsWith('/') || granted.endsWith(SEP) ? granted : granted + '/';
+  const r = spawnSync(process.execPath, ['--permission', `--allow-fs-read=${withSeparator}`, '--no-warnings', probe, secret], {
+    encoding: 'utf8',
+  });
+  const out = (r.stdout || r.stderr || '').trim();
+  assert.match(out, /^blocked/, `a grant on ${granted} reached ${sibling}: ${out}`);
 });

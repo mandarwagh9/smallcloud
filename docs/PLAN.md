@@ -479,5 +479,18 @@ receipt upload, retrieval, per-person authorization, and cleanup on delete, plus
 algorithm in an `api/_split.js` helper to show non-route files). All three were deployed to a live
 server and driven end to end; both new frontends were opened in a real browser.
 
+**CI (T1.1, done late).** `.github/workflows/ci.yml` runs typecheck and the suite on
+ubuntu-latest and windows-latest at Node 22.15, and fails the build if the Node in CI is too old
+for the `node:sqlite` isolation test to actually pass rather than skip. A second job builds both
+images, runs the full suite plus the `SC_APP_UID` boundary check in a container, boots the
+production image, and asserts the app user is refused `platform.db` and that the file is 0600.
+Every step was dry-run locally first.
+
+**A footgun found while adding the grant-prefix test.** `src/sandbox-host.mjs` installs its loader
+hooks at module scope, so a test that imported it merely to read a flag installed those hooks *in
+the test runner*, blocking every later `import('node:...')` in that file. It only showed up on
+Linux, because Node 22.14 on the dev box has no `registerHooks` to install. The tests now detect
+the capability directly and never load the sandbox host into the runner.
+
 **Still not done**: the rest of M5 -- a public landing/docs site, and the name, license and domain
 decisions, which are Mandar's calls (section 13).
