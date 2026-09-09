@@ -1,0 +1,18 @@
+# Replace with your domain. Caddy gets a certificate automatically.
+cloud.example.com {
+	reverse_proxy smallcloud:8787
+
+	# Apps are untrusted code on a shared origin. These headers do not replace
+	# per-app subdomains (see docs/PLAN.md, v1.x) but they cost nothing.
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy same-origin
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+
+	# Bundles can be up to 5 MB; leave room for the JSON envelope.
+	request_body {
+		max_size 8MB
+	}
+}

@@ -1,0 +1,31 @@
+{
+  "name": "smallcloud",
+  "version": "0.1.0",
+  "description": "A cloud for small software. Agents deploy a folder; people get a link.",
+  "type": "module",
+  "license": "UNLICENSED",
+  "private": true,
+  "engines": {
+    "node": ">=22.13"
+  },
+  "bin": {
+    "smallcloud": "./bin/smallcloud.mjs"
+  },
+  "scripts": {
+    "dev": "node --no-warnings=ExperimentalWarning --import tsx src/cli.ts serve",
+    "cli": "node --no-warnings=ExperimentalWarning --import tsx src/cli.ts",
+    "test": "node --no-warnings=ExperimentalWarning --import tsx --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "build": "tsc && node -e \"require('fs').copyFileSync('src/sandbox-host.mjs','dist/sandbox-host.mjs')\"",
+    "start": "node --no-warnings=ExperimentalWarning dist/cli.js serve",
+    "agents": "node --no-warnings=ExperimentalWarning --import tsx -e \"import('./src/contract.js').then(m=>require('fs').writeFileSync('AGENTS.md',m.CONTRACT))\""
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0"
+  }
+}

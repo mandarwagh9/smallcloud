@@ -1,0 +1,97 @@
+# Security
+
+smallcloud runs code your agents write, on your server, for a handful of people you name.
+This document says exactly what that boundary does and does not cover. Every claim in
+"What is enforced" has a test in `test/security.test.ts`; run `npm test` to check them.
+
+## Trust model
+
+| Party | Trusted? |
+|---|---|
+| The person running the instance | fully; they own the box |
+| Builders who deploy (owner + editors) | trusted to run code on the instance |
+| App code | **not** trusted; treated as hostile and confined |
+| Recipients (people opening links) | not trusted; ordinary web visitors |
+| Strangers | cannot deploy at all unless you give them an account |
+
+The instance is **not** designed for letting the public deploy code to it. If you need
+that, replace the sandbox (see "Swapping the boundary") before opening the door.
+
+## What is enforced
+
+Each app runs in its own Node process started with `--permission` and grants limited to
+that app's directory:
+
+| Guarantee | Test |
+|---|---|
+| An app cannot read files outside its own directory (including the platform database) | `an app cannot read a file outside its own directory` |
+| An app cannot read another app's database | `an app cannot read another app's database` |
+| An app cannot write outside its own data directory | `an app cannot write outside its data directory` |
+| An app cannot spawn a process | `an app cannot spawn a process` |
+| An app cannot start a worker thread | `an app cannot start a worker thread` |
+| An app receives no platform environment variables (no `SC_SECRET`, no `NODE_OPTIONS`) | `an app does not inherit platform environment variables` |
+| `ctx.fetch` refuses localhost, link-local and RFC1918 addresses | `ctx.fetch refuses private network addresses` |
+| A request over 10s is killed; the app restarts on the next request | `a runaway request is killed and the app recovers` |
+| An app crash never takes the control plane down | `an app that crashes does not take the platform down` |
+| Bundle paths cannot escape the app directory | `bundle paths cannot escape the app directory` |
+| Static serving cannot escape `public/` | `static serving cannot escape the public directory` |
+| `ctx.files` names cannot traverse | `ctx.files rejects names that traverse` |
+
+Other controls:
+
+- **Memory**: each app process gets a 128 MB heap (`--max-old-space-size`).
+- **Authentication**: single-use magic links (15 min), 30-day HttpOnly SameSite=Lax
+  session cookies, `Secure` when `SC_BASE_URL` is https. API tokens are stored only as a
+  SHA-256 hash and are revocable.
+- **Authorization**: one function, `roleFor()`, decides every access. Its full truth table
+  is tested in `test/shares.test.ts`.
+- **Secrets**: AES-256-GCM at rest, keyed from `SC_SECRET`; decrypted only when handed to
+  an app; never returned by the API.
+- **Rate limits**: sign-in 5/email and 20/IP per 15 min; deploys 30/hour per account;
+  app requests 300/min per IP.
+- **CSRF**: form posts are same-origin checked and cookies are SameSite=Lax.
+
+## What is not defended in v1
+
+Be honest with yourself about these before you open an instance up.
+
+1. **Hostile deployers.** `--permission` is a strong boundary but it is not a VM. Someone
+   determined to break out, who is allowed to deploy arbitrary code, may manage it. Only
+   let people you trust deploy.
+2. **Cross-app browser isolation.** All apps share one origin (`/a/<slug>`), so an XSS in
+   one app can reach another app's DOM and same-origin requests within that browser. Per-app
+   subdomains are the fix and are planned for v1.x. Until then, treat apps deployed to one
+   instance as mutually trusting in the browser.
+3. **DNS rebinding.** `ctx.fetch` blocks private addresses by hostname and literal IP, not
+   by re-resolving after the DNS lookup. A hostile app author could still reach the local
+   network with a rebinding trick.
+4. **Raw sockets.** `node:net` is reachable from app code, so an app can open TCP
+   connections. Every control-plane endpoint requires authentication, so this does not
+   grant access to platform data, but it is not a sealed network boundary.
+5. **Side channels.** No mitigation for timing or resource-contention side channels
+   between apps on the same box.
+6. **Denial of service by a co-tenant.** An app that burns CPU is killed after 10s, but it
+   can slow down the box in the meantime. There is no per-app CPU quota.
+7. **Email deliverability as an auth control.** Anyone who can read a recipient's inbox can
+   sign in as them. Use `SC_ALLOWED_EMAILS` on private instances.
+
+## Swapping the boundary
+
+`src/runtime.ts` owns process creation and `src/sandbox-host.mjs` owns the `ctx` API.
+Replacing the boundary with V8 isolates, gVisor, Firecracker or Workers-for-Platforms means
+reimplementing those two files; nothing else in the codebase assumes how isolation works.
+
+## Operational advice
+
+- Set `SC_SECRET` to 32 random bytes and back it up: losing it makes stored secrets
+  unreadable. Rotating it requires re-entering every app secret.
+- Set `SC_ALLOWED_EMAILS` unless you actually want anyone with an email address to be able
+  to sign in (they still see only what is shared with them).
+- Put a TLS terminator in front (the bundled Caddy config does this) and set
+  `SC_TRUST_PROXY=1` so rate limits see real client IPs.
+- Back up the data directory; `scripts/backup.sh` does it consistently.
+
+## Reporting a problem
+
+Open an issue describing the class of problem, or contact the instance owner directly for
+anything exploitable. Please do not post working exploits publicly.

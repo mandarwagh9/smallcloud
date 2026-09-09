@@ -1,0 +1,36 @@
+services:
+  smallcloud:
+    build: .
+    restart: unless-stopped
+    environment:
+      SC_BASE_URL: ${SC_BASE_URL:?set SC_BASE_URL, e.g. https://cloud.example.com}
+      SC_SECRET: ${SC_SECRET:?generate one with: openssl rand -hex 32}
+      SC_DATA_DIR: /data
+      PORT: 8787
+      SC_TRUST_PROXY: "1"
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      EMAIL_FROM: ${EMAIL_FROM:-smallcloud <login@example.com>}
+      SC_ALLOWED_EMAILS: ${SC_ALLOWED_EMAILS:-}
+    volumes:
+      - smallcloud-data:/data
+    expose:
+      - "8787"
+
+  # TLS and the public port. Drop this service if you already run a reverse proxy.
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - smallcloud
+
+volumes:
+  smallcloud-data:
+  caddy-data:
+  caddy-config:
