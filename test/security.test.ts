@@ -9,6 +9,19 @@ import { startHarness, deploy, bundle, type Harness } from './helpers.js';
 let h: Harness;
 let token: string;
 
+/**
+ * An app can be stopped from reaching a builtin by either layer, and which one fires depends
+ * on the Node version: `ERR_MODULE_BLOCKED` from the load-time block (Node >= 22.15), or
+ * `ERR_ACCESS_DENIED` from the permission model when the module did load. The guarantee under
+ * test is the outcome -- the app did not get at the resource -- not which layer delivered it.
+ */
+const BLOCKED_CODES = new Set(['ERR_MODULE_BLOCKED', 'ERR_ACCESS_DENIED']);
+
+function assertBlocked(body: { result?: string; code?: string }, what: string): void {
+  assert.equal(body.result, 'blocked', `${what} (code: ${body.code ?? 'none'})`);
+  assert.ok(BLOCKED_CODES.has(body.code ?? ''), `${what}: unexpected block reason ${body.code}`);
+}
+
 before(async () => {
   h = await startHarness();
   token = h.tokenFor('owner@example.com');
@@ -33,12 +46,13 @@ test('an app cannot read a file outside its own directory', async () => {
   const secret = join(h.services.cfg.dataDir, 'platform.db');
   const { body } = await probe(
     'fs-escape',
-    `const fs = await import('node:' + 'fs');
-     try { const b = fs.readFileSync(${JSON.stringify(secret)}); return { json: { result: 'LEAKED', bytes: b.length } }; }
-     catch (e) { return { json: { result: 'blocked', code: e.code } }; }`,
+    `try {
+       const fs = await import('node:' + 'fs');
+       const b = fs.readFileSync(${JSON.stringify(secret)});
+       return { json: { result: 'LEAKED', bytes: b.length } };
+     } catch (e) { return { json: { result: 'blocked', code: e.code } }; }`,
   );
-  assert.equal(body.result, 'blocked', 'an app read the platform database');
-  assert.equal(body.code, 'ERR_ACCESS_DENIED');
+  assertBlocked(body, 'an app read the platform database');
 });
 
 test('an app cannot read another app’s database', async () => {
@@ -48,22 +62,26 @@ test('an app cannot read another app’s database', async () => {
   writeFileSync(otherDb, 'not really a db, but readable');
   const { body } = await probe(
     'cross-app',
-    `const fs = await import('node:' + 'fs');
-     try { fs.readFileSync(${JSON.stringify(otherDb)}); return { json: { result: 'LEAKED' } }; }
-     catch (e) { return { json: { result: 'blocked', code: e.code } }; }`,
+    `try {
+       const fs = await import('node:' + 'fs');
+       fs.readFileSync(${JSON.stringify(otherDb)});
+       return { json: { result: 'LEAKED' } };
+     } catch (e) { return { json: { result: 'blocked', code: e.code } }; }`,
   );
-  assert.equal(body.result, 'blocked', 'an app read another app’s database');
+  assertBlocked(body, 'an app read another app’s database');
 });
 
 test('an app cannot write outside its data directory', async () => {
   const target = join(h.services.cfg.dataDir, 'escaped.txt');
   const { body } = await probe(
     'fs-write',
-    `const fs = await import('node:' + 'fs');
-     try { fs.writeFileSync(${JSON.stringify(target)}, 'x'); return { json: { result: 'LEAKED' } }; }
-     catch (e) { return { json: { result: 'blocked', code: e.code } }; }`,
+    `try {
+       const fs = await import('node:' + 'fs');
+       fs.writeFileSync(${JSON.stringify(target)}, 'x');
+       return { json: { result: 'LEAKED' } };
+     } catch (e) { return { json: { result: 'blocked', code: e.code } }; }`,
   );
-  assert.equal(body.result, 'blocked');
+  assertBlocked(body, 'an app wrote outside its data directory');
   assert.equal(existsSync(target), false);
 });
 
@@ -73,8 +91,7 @@ test('an app cannot spawn a process', async () => {
     `try { const cp = await import('node:' + 'child_process'); cp.spawnSync(process.execPath, ['-e', '0']); return { json: { result: 'LEAKED' } }; }
      catch (e) { return { json: { result: 'blocked', code: e.code ?? e.constructor.name } }; }`,
   );
-  assert.equal(body.result, 'blocked', 'an app spawned a process');
-  assert.equal(body.code, 'ERR_ACCESS_DENIED');
+  assertBlocked(body, 'an app spawned a process');
 });
 
 test('an app cannot start a worker thread', async () => {

@@ -3,7 +3,7 @@ import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
 import { z } from 'zod';
 import { execFileSync } from 'node:child_process';
 import { readDirAsFiles } from './apps.js';
-import { ApiError, Client, readAppPin, requireConfig, writeAppPin } from './client.js';
+import { ApiError, Client, deployFiles, requireConfig } from './client.js';
 import { CONTRACT } from './contract.js';
 
 const RULES =
@@ -41,10 +41,12 @@ export function buildMcpServer(): McpServer {
     },
     ({ dir, appId }) =>
       run(async () => {
-        const c = client();
-        const app = await c.deploy(readDirAsFiles(dir), appId ?? readAppPin(dir) ?? undefined);
-        writeAppPin(dir, app.id, app.url);
-        return { ...app, next: 'open the url to check it works, then share it with smallcloud_share' };
+        const { app, recreated } = await deployFiles(client(), dir, readDirAsFiles(dir), appId);
+        return {
+          ...app,
+          ...(recreated ? { note: 'the app this folder previously pointed at no longer exists, so a new one was created' } : {}),
+          next: 'open the url to check it works, then share it with smallcloud_share',
+        };
       }),
   );
 

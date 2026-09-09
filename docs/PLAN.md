@@ -424,6 +424,23 @@ v1 was built against this plan in one session. What changed from the plan as wri
 
 **Not yet done from this plan**: M3's cold-agent eval harness (T3.6), M4's VPS load run (T4.6), and all of M5 (landing page, further examples, name/license/domain). The open questions in section 13 are still open.
 
-**Unverified on this machine** (both need a Linux box or a running Docker daemon, and Node >= 22.15):
-the load-time builtin block, and the `SC_APP_UID` OS boundary. M1's DoD says "green on Windows + Linux";
-only Windows has been run. Both should be checked before an instance is exposed to anyone.
+**Linux verification (done, 2026-09-09).** `docker build -f Dockerfile.test` on node:22-slim (Node 22.23):
+**54/54 pass, nothing skipped** -- the `node:sqlite` test passes there rather than skipping, confirming the
+load-time block works. `scripts/verify-uid-isolation.mjs` proves the OS layer separately: a plain `node`
+running as the app user, with no Node-level protection, is refused `platform.db` by the kernel. The
+production image was built, booted, and driven end to end through the CLI.
+
+Four further bugs were found and fixed during that verification, none of which Windows could have shown:
+
+| Bug | Consequence |
+|---|---|
+| `docker-entrypoint.sh` chmodded `platform.db` before the server created it | it stayed world-readable (0644) on a fresh instance. The server now sets 0600 on the database and its WAL siblings itself, so it cannot depend on script ordering. |
+| `useradd --uid 10001` created the group at gid 999 | `SC_APP_GID=10001` named a group that did not exist. Now `groupadd --gid 10001` first. |
+| App directories were created by the root control plane | under `SC_APP_UID` the app could not write its own database ("unable to open database file"). The runtime now hands `data/` to the app user on start; `bundle/` deliberately stays root-owned and read-only. |
+| `deploy` failed hard when the folder's pinned app no longer existed | a deleted app, or pointing a folder at a different server, left the CLI and the MCP tool stuck on `not_found`. A stale pin now creates a new app; an explicit `--app` still errors. |
+
+Four security tests also had to be rewritten: they asserted `ERR_ACCESS_DENIED` specifically, but on
+Node >= 22.15 the load-time block fires first and returns `ERR_MODULE_BLOCKED`. They now assert the
+guarantee (the app did not reach the resource) rather than which layer delivered it, and pass on both.
+
+**Still not done**: M3's cold-agent eval harness (T3.6), M4's VPS load run (T4.6), and all of M5.

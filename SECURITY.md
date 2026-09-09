@@ -67,12 +67,19 @@ Three layers address it. Know which ones you have:
 |---|---|---|
 | Deploy-time guardrail | any route whose source references a denied builtin | always |
 | Load-time block (`module.registerHooks`) | the same imports built at runtime, e.g. `import('node:'+'sqlite')` | **Node >= 22.15** |
-| OS user separation (`SC_APP_UID`) | all of it, at the kernel, whatever Node does | POSIX, when configured |
+| OS user separation (`SC_APP_UID`) | all of it, at the kernel, whatever Node does | POSIX, when configured; **on by default in the Docker image** |
 
 The deploy-time guardrail is a guardrail, not a boundary: it is string matching and can be
 evaded by an author who wants to. On Node < 22.15 with no `SC_APP_UID`, treat anyone who can
 deploy as having read access to the platform database. `npm test` reports this as a skipped
 test naming the gap rather than passing.
+
+**Verified on Linux / Node 22.23 (`docker build -f Dockerfile.test`)**: all 54 tests pass with
+nothing skipped, and `scripts/verify-uid-isolation.mjs` confirms both layers independently --
+the app is stopped with `ERR_MODULE_BLOCKED`, and a plain `node` process running as the app
+user with no Node-level protections at all is refused by the kernel. In the production image
+`platform.db` and its WAL siblings are `0600` root-owned, each app's `data/` belongs to
+uid 10001, and `bundle/` stays root-owned and read-only to the app.
 
 **Recommended production configuration**: Node >= 22.15 (the bundled Docker image) **and**
 `SC_APP_UID`/`SC_APP_GID` pointing at a user that cannot read `platform.db` (chmod it 0600

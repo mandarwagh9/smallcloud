@@ -165,6 +165,33 @@ export async function deviceLogin(url: string, opts: { open?: (u: string) => voi
   throw new ApiError(408, 'login_timeout', 'nobody approved the login in time');
 }
 
+/**
+ * Deploy a folder, honouring the per-folder pin.
+ *
+ * If the pinned app is gone -- deleted, or the pin points at a different server -- this makes
+ * a new app rather than failing. An explicit --app id is treated as deliberate and still errors,
+ * because silently creating a second app under a name the caller chose would be worse.
+ */
+export async function deployFiles(
+  client: Client,
+  dir: string,
+  files: AppFile[],
+  explicitAppId?: string,
+): Promise<{ app: AppSummary; recreated: boolean }> {
+  const pinned = explicitAppId ?? readAppPin(dir) ?? undefined;
+  try {
+    const app = await client.deploy(files, pinned);
+    writeAppPin(dir, app.id, app.url);
+    return { app, recreated: false };
+  } catch (err) {
+    const stalePin = err instanceof ApiError && err.code === 'not_found' && pinned && !explicitAppId;
+    if (!stalePin) throw err;
+    const app = await client.deploy(files);
+    writeAppPin(dir, app.id, app.url);
+    return { app, recreated: true };
+  }
+}
+
 /** Per-folder pin so a second deploy updates the same app instead of creating a new one. */
 export function readAppPin(dir: string): string | null {
   const p = join(dir, '.smallcloud.json');

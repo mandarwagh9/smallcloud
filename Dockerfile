@@ -17,7 +17,7 @@ COPY examples ./examples
 
 # App processes run as a separate OS user, so the kernel enforces isolation even where
 # Node's permission model does not (see SECURITY.md, "The node:sqlite gap").
-RUN useradd --system --no-create-home --uid 10001 scapp
+RUN groupadd --system --gid 10001 scapp && useradd --system --no-create-home --uid 10001 --gid 10001 scapp
 ENV SC_DATA_DIR=/data SC_APP_UID=10001 SC_APP_GID=10001
 
 # The control plane runs as root so it can drop to scapp when forking app hosts, and so

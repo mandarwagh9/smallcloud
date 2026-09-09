@@ -1,7 +1,7 @@
 import { fork, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { mkdirSync, existsSync } from 'node:fs';
+import { mkdirSync, existsSync, chownSync, statSync, readdirSync } from 'node:fs';
 import type { Apps } from './apps.js';
 import type { RouteRequest, RouteResponse, User } from './types.js';
 
@@ -140,6 +140,10 @@ export class Runtime {
     const paths = this.apps.paths(appId);
     mkdirSync(paths.files, { recursive: true });
     if (!existsSync(paths.bundle)) throw new Error(`app ${appId} has no deployed bundle`);
+    // The control plane creates these directories, so under SC_APP_UID they would belong to
+    // the platform user and the app could not write its own database. Only data/ changes
+    // hands: bundle/ stays owned by the platform and is read-only to the app.
+    this.handOverDataDir(paths.data);
     const script = hostScriptPath();
 
     const child = fork(script, [], {
@@ -214,6 +218,23 @@ export class Runtime {
 
     this.touch(appId, host);
     return host;
+  }
+
+  /** Give the app user ownership of its writable tree, when running with SC_APP_UID. */
+  private handOverDataDir(dir: string): void {
+    const { appUid, appGid } = this.isolation;
+    if (appUid === undefined || process.platform === 'win32') return;
+    const gid = appGid ?? appUid;
+    const walk = (p: string) => {
+      chownSync(p, appUid, gid);
+      if (statSync(p).isDirectory()) for (const name of readdirSync(p)) walk(join(p, name));
+    };
+    try {
+      walk(dir);
+    } catch (err) {
+      // Not fatal on its own, but the app will fail to write, so make the reason findable.
+      this.apps.log(dir, 'error', `could not hand ${dir} to uid ${appUid}: ${(err as Error).message}`);
+    }
   }
 
   /** Reset the idle countdown; an app with no traffic for IDLE_SHUTDOWN_MS exits. */

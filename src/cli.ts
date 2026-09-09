@@ -2,7 +2,7 @@ import { resolve, basename } from 'node:path';
 import { existsSync, writeFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import { readDirAsFiles } from './apps.js';
-import { ApiError, Client, deviceLogin, loadConfig, readAppPin, requireConfig, saveConfig, writeAppPin } from './client.js';
+import { ApiError, Client, deployFiles, deviceLogin, loadConfig, requireConfig, saveConfig } from './client.js';
 import { configFromEnv } from './config.js';
 import { createHttpServer, createServices } from './server.js';
 import { CONTRACT } from './contract.js';
@@ -67,11 +67,13 @@ export async function main(argv: string[]): Promise<number> {
         const dir = resolve(args[0] ?? '.');
         if (!existsSync(dir)) return fail(`no such folder: ${dir}`);
         const client = new Client(requireConfig());
-        const files = readDirAsFiles(dir);
-        const appId = flags.get('app') ?? readAppPin(dir) ?? undefined;
-        const app = await client.deploy(files, appId);
-        writeAppPin(dir, app.id, app.url);
-        process.stdout.write(`${appId ? 'Updated' : 'Deployed'} ${app.name} (v${app.version})\n  ${app.url}\n  id ${app.id}\n`);
+        const { app, recreated } = await deployFiles(client, dir, readDirAsFiles(dir), flags.get('app'));
+        const verb = recreated
+          ? 'Redeployed as a new app (the one this folder pointed at is gone)'
+          : app.version > 1
+            ? 'Updated'
+            : 'Deployed';
+        process.stdout.write(`${verb} ${app.name} (v${app.version})\n  ${app.url}\n  id ${app.id}\n`);
         return 0;
       }
 

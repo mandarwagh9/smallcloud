@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, chmodSync, existsSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 export type Db = DatabaseSync;
@@ -71,5 +71,24 @@ export function openPlatformDb(path: string): Db {
   const db = new DatabaseSync(path);
   db.exec('pragma journal_mode = wal; pragma busy_timeout = 3000; pragma foreign_keys = on;');
   db.exec(SCHEMA);
+  if (path !== ':memory:') restrictMode(path);
   return db;
+}
+
+/**
+ * The platform database holds session ids and API token hashes, so nothing but the platform
+ * user may read it. Doing this here rather than in an entrypoint script matters: the files do
+ * not exist until this function creates them, so an entrypoint that runs first finds nothing
+ * to chmod and leaves them world-readable. WAL adds two sibling files with the same secrets.
+ */
+function restrictMode(path: string): void {
+  if (process.platform === 'win32') return;
+  for (const f of [path, `${path}-wal`, `${path}-shm`]) {
+    try {
+      if (existsSync(f)) chmodSync(f, 0o600);
+    } catch {
+      // A read-only or exotic filesystem is not worth refusing to boot over; the operator
+      // still has SC_APP_UID and directory modes.
+    }
+  }
 }

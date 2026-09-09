@@ -1,0 +1,17 @@
+# Runs the full suite on Linux, plus the two checks that cannot run on Windows:
+# the load-time builtin block (needs Node >= 22.15) and the SC_APP_UID OS boundary.
+FROM node:22-slim
+
+WORKDIR /app
+COPY package.json package-lock.json tsconfig.json ./
+RUN npm ci
+
+# The uid boundary test needs the same unprivileged user the production image uses.
+RUN groupadd --system --gid 10001 scapp && useradd --system --no-create-home --uid 10001 --gid 10001 scapp
+
+COPY src ./src
+COPY test ./test
+COPY scripts ./scripts
+COPY examples ./examples
+
+CMD ["sh", "-lc", "node -e \"console.log('node', process.version, '| registerHooks:', typeof require('node:module').registerHooks)\" && npm test && node --no-warnings=ExperimentalWarning --import tsx scripts/verify-uid-isolation.mjs"]
