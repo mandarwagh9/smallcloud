@@ -56,7 +56,7 @@ export function createServices(cfg: Config, mailer?: Mailer): Services {
   const apps = new Apps(db, cfg.dataDir, cfg.secret);
   const m = mailer ?? mailerFromEnv(process.env);
   const auth = new Auth({ db, mailer: m, baseUrl: cfg.baseUrl, allowedEmails: cfg.allowedEmails });
-  const runtime = new Runtime(apps);
+  const runtime = new Runtime(apps, { appUid: cfg.appUid, appGid: cfg.appGid });
   return {
     cfg,
     db,

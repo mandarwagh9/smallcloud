@@ -414,9 +414,16 @@ v1 was built against this plan in one session. What changed from the plan as wri
 | `--allow-fs-read` covers the app root, `--allow-fs-write` only `data/` | SQLite in WAL mode must read the database it writes and create `-wal`/`-shm` siblings. |
 | `ctx.files` rejects names containing a directory instead of silently taking the basename | a silent rewrite means an app believes it wrote somewhere it did not. |
 | D11, D12 added | surfaced by review; see the table above. |
+| `/v1/apps/:id/db` moved out of the control plane into the app's sandboxed process | it opened the app database with the platform's filesystem access, so `VACUUM INTO '<any path>'` written by an editor escaped the data directory. Reproduced, then fixed. |
+| `--allow-fs-*` grants now carry a trailing separator | Node matches grants by path prefix, so a grant on `.../apps/aa` could otherwise cover `.../apps/aaa`. Latent (ids are fixed-length) but now closed. |
+| **`node:sqlite` bypasses the Node permission model** | found while fixing the above: `fs.readFileSync(platformDb)` is denied, `new DatabaseSync(platformDb)` succeeds. Any app could read every session and token hash. Mitigated with a deploy-time guardrail, a load-time module block (Node >= 22.15) and optional `SC_APP_UID`; documented in SECURITY.md. **The load-time block is unverified on this machine** (Node 22.14 has no `module.registerHooks`) and the corresponding test reports a skip naming the gap rather than passing. |
 
 **Verified end to end on a live server**: device login -> `smallcloud deploy ./examples/todo` -> app answers -> shared with a second person -> that person signed in via an emailed link, used the app, was credited by email, and was refused management access -> redeploy kept the URL and the data -> export produced a zip with source and database.
 
 **Test coverage**: 52 tests. `test/security.test.ts` (12) asserts every guarantee in SECURITY.md; `test/shares.test.ts` (5) covers the full ACL truth table; `test/apps.test.ts` (14) covers validation, deploy/redeploy, secrets, logs, crypto and zip; `test/e2e.test.ts` (21) walks journeys J1-J6 against a real server.
 
 **Not yet done from this plan**: M3's cold-agent eval harness (T3.6), M4's VPS load run (T4.6), and all of M5 (landing page, further examples, name/license/domain). The open questions in section 13 are still open.
+
+**Unverified on this machine** (both need a Linux box or a running Docker daemon, and Node >= 22.15):
+the load-time builtin block, and the `SC_APP_UID` OS boundary. M1's DoD says "green on Windows + Linux";
+only Windows has been run. Both should be checked before an instance is exposed to anyone.

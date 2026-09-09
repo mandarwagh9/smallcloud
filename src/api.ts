@@ -1,4 +1,4 @@
-import { DatabaseSync } from 'node:sqlite';
+import { SqlError } from './runtime.js';
 import type { Services, RequestCtx } from './server.js';
 import { DeployError } from './apps.js';
 import { ShareError, listShares, parsePrincipal, parseRole, roleFor, canUse, canManage, setShare, removeShare } from './shares.js';
@@ -157,7 +157,12 @@ export async function handleApi(s: Services, ctx: RequestCtx): Promise<void> {
     requireManage(s, ctx, app);
     const body = await readJson<{ sql?: string; params?: unknown[] }>(ctx.req);
     if (!body.sql) throw new HttpError(400, 'bad_request', 'send {"sql": "select * from todos", "params": []}');
-    return sendJson(res, 200, runAppSql(s, app.id, body.sql, body.params ?? []));
+    try {
+      return sendJson(res, 200, await s.runtime.sql(app.id, body.sql, body.params ?? []));
+    } catch (err) {
+      if (err instanceof SqlError) throw new HttpError(400, 'sql_error', err.message);
+      throw err;
+    }
   }
 
   if (sub === 'export' && method === 'GET') {
@@ -173,23 +178,6 @@ export async function handleApi(s: Services, ctx: RequestCtx): Promise<void> {
   }
 
   throw new HttpError(404, 'no_such_endpoint', `${ctx.method} ${ctx.url.pathname} is not an endpoint; see GET /v1/contract`);
-}
-
-/** Run SQL against an app's own database from the control plane (agent debugging, migrations). */
-function runAppSql(s: Services, appId: string, sql: string, params: unknown[]): { rows?: unknown[]; changes?: number } {
-  const db = new DatabaseSync(s.apps.paths(appId).db);
-  try {
-    db.exec('pragma journal_mode = wal; pragma busy_timeout = 3000;');
-    const stmt = db.prepare(sql);
-    const isRead = /^\s*(select|pragma|with|explain)/i.test(sql);
-    if (isRead) return { rows: stmt.all(...(params as never[])) };
-    const r = stmt.run(...(params as never[]));
-    return { changes: Number(r.changes) };
-  } catch (err) {
-    throw new HttpError(400, 'sql_error', (err as Error).message);
-  } finally {
-    db.close();
-  }
 }
 
 function describe(s: Services, app: AppRecord) {

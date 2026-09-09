@@ -15,8 +15,10 @@ function hostScriptPath(): string {
   return join(here, 'sandbox-host.mjs');
 }
 
+export class SqlError extends Error {}
+
 interface Pending {
-  resolve: (r: RouteResponse) => void;
+  resolve: (r: any) => void;
   reject: (e: Error) => void;
   timer: NodeJS.Timeout;
 }
@@ -32,35 +34,43 @@ export class Runtime {
   private hosts = new Map<string, Host>();
   private nextInvokeId = 1;
 
-  constructor(private apps: Apps) {}
+  constructor(
+    private apps: Apps,
+    private isolation: { appUid?: number; appGid?: number } = {},
+  ) {}
 
   /** Run one request inside the app's own process, starting it if needed. */
   async invoke(appId: string, request: RouteRequest, user: User | null, env: Record<string, string>): Promise<RouteResponse> {
-    const host = this.hostFor(appId);
-    const invokeId = this.nextInvokeId++;
-    return new Promise<RouteResponse>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        host.pending.delete(invokeId);
+    return this.send<RouteResponse>(
+      appId,
+      (invokeId) => ({ t: 'invoke', invokeId, request, user, env }),
+      (invokeId) => {
         this.apps.log(appId, 'error', `request timed out after ${REQUEST_TIMEOUT_MS}ms: ${request.method} ${request.path}`);
-        // A runaway synchronous loop cannot be interrupted from outside, so the process goes.
-        // Other in-flight requests for this app die with it (docs/PLAN.md D11).
-        this.stop(appId);
-        resolve({
+        void invokeId;
+        return {
           status: 504,
           headers: { 'content-type': 'application/json; charset=utf-8' },
           body: JSON.stringify({ error: 'timeout', message: `the app took longer than ${REQUEST_TIMEOUT_MS / 1000}s to respond` }),
-        });
-      }, REQUEST_TIMEOUT_MS);
-      host.pending.set(invokeId, { resolve, reject, timer });
-      this.touch(appId, host);
-      try {
-        host.child.send({ t: 'invoke', invokeId, request, user, env });
-      } catch (err) {
-        clearTimeout(timer);
-        host.pending.delete(invokeId);
-        reject(err as Error);
-      }
-    });
+        };
+      },
+    );
+  }
+
+  /**
+   * Run SQL against an app's database for an owner or editor.
+   * This deliberately goes through the app's own sandboxed process: statements such as
+   * VACUUM INTO and ATTACH can write files, and only inside that process are they confined
+   * to the app's own directory. Running them in the control plane would hand an editor the
+   * platform's filesystem access.
+   */
+  async sql(appId: string, sql: string, params: unknown[] = []): Promise<{ rows?: unknown[]; changes?: number }> {
+    const out = await this.send<{ ok: boolean; result?: { rows?: unknown[]; changes?: number }; message?: string; timedOut?: boolean }>(
+      appId,
+      (invokeId) => ({ t: 'sql', invokeId, sql, params }),
+      () => ({ ok: false, message: `the query took longer than ${REQUEST_TIMEOUT_MS / 1000}s`, timedOut: true }),
+    );
+    if (!out.ok) throw new SqlError(out.message ?? 'query failed');
+    return out.result ?? {};
   }
 
   /** Stop an app's process (called on redeploy, delete, timeout, and shutdown). */
@@ -76,6 +86,8 @@ export class Runtime {
         status: 503,
         headers: { 'content-type': 'application/json; charset=utf-8' },
         body: JSON.stringify({ error: 'restarted', message: 'the app was restarted while this request was running; try again' }),
+        ok: false,
+        message: 'the app was restarted while this query was running; try again',
       });
     }
     host.pending.clear();
@@ -93,6 +105,30 @@ export class Runtime {
 
   // ---- internals ----------------------------------------------------------
 
+  /** Send one message to an app host and wait for the matching reply. */
+  private send<T>(appId: string, build: (invokeId: number) => object, onTimeout: (invokeId: number) => T): Promise<T> {
+    const host = this.hostFor(appId);
+    const invokeId = this.nextInvokeId++;
+    return new Promise<T>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        host.pending.delete(invokeId);
+        // A runaway synchronous loop cannot be interrupted from outside, so the process goes.
+        // Other in-flight work for this app dies with it (docs/PLAN.md D11).
+        this.stop(appId);
+        resolve(onTimeout(invokeId));
+      }, REQUEST_TIMEOUT_MS);
+      host.pending.set(invokeId, { resolve: resolve as (r: any) => void, reject, timer });
+      this.touch(appId, host);
+      try {
+        host.child.send(build(invokeId));
+      } catch (err) {
+        clearTimeout(timer);
+        host.pending.delete(invokeId);
+        reject(err as Error);
+      }
+    });
+  }
+
   private hostFor(appId: string): Host {
     const existing = this.hosts.get(appId);
     if (existing && existing.child.connected) return existing;
@@ -109,9 +145,9 @@ export class Runtime {
     const child = fork(script, [], {
       execArgv: [
         '--permission',
-        `--allow-fs-read=${paths.root}`,
+        `--allow-fs-read=${withSep(paths.root)}`,
         `--allow-fs-read=${script}`,
-        `--allow-fs-write=${paths.data}`,
+        `--allow-fs-write=${withSep(paths.data)}`,
         `--max-old-space-size=${MAX_HEAP_MB}`,
         '--no-warnings',
       ],
@@ -126,6 +162,10 @@ export class Runtime {
       },
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],
       serialization: 'json',
+      // When set, the OS refuses cross-app and platform file access regardless of what
+      // Node's permission model does or does not cover. This is the real boundary.
+      ...(this.isolation.appUid !== undefined ? { uid: this.isolation.appUid } : {}),
+      ...(this.isolation.appGid !== undefined ? { gid: this.isolation.appGid } : {}),
     });
 
     const host: Host = { child, pending: new Map(), idleTimer: null, stopping: false };
@@ -135,14 +175,20 @@ export class Runtime {
     child.stderr?.on('data', (b: Buffer) => this.apps.log(appId, 'error', b.toString('utf8').trimEnd()));
 
     child.on('message', (m: unknown) => {
-      const msg = m as { t: string; invokeId?: number; response?: RouteResponse; logs?: Array<{ level: 'info' | 'error'; msg: string }>; msg?: string };
-      if (msg.t === 'result' && typeof msg.invokeId === 'number') {
+      const msg = m as {
+        t: string;
+        invokeId?: number;
+        response?: RouteResponse;
+        logs?: Array<{ level: 'info' | 'error'; msg: string }>;
+        msg?: string;
+      };
+      if ((msg.t === 'result' || msg.t === 'sql-result') && typeof msg.invokeId === 'number') {
         for (const l of msg.logs ?? []) this.apps.log(appId, l.level, l.msg);
         const p = host.pending.get(msg.invokeId);
         if (!p) return;
         clearTimeout(p.timer);
         host.pending.delete(msg.invokeId);
-        p.resolve(msg.response!);
+        p.resolve(msg.t === 'result' ? msg.response : msg);
       } else if (msg.t === 'crash') {
         this.apps.log(appId, 'error', msg.msg ?? 'app crashed');
       }
@@ -151,10 +197,12 @@ export class Runtime {
     child.on('exit', (code, signal) => {
       if (host.stopping) return;
       this.apps.log(appId, 'error', `app process exited (code ${code}, signal ${signal})`);
-      const failure: RouteResponse = {
+      const failure = {
         status: 500,
         headers: { 'content-type': 'application/json; charset=utf-8' },
         body: JSON.stringify({ error: 'app_crashed', message: 'the app process exited while handling this request; check logs' }),
+        ok: false,
+        message: 'the app process exited while running this query; check logs',
       };
       for (const [, p] of host.pending) {
         clearTimeout(p.timer);
@@ -177,4 +225,12 @@ export class Runtime {
     }, IDLE_SHUTDOWN_MS);
     host.idleTimer.unref?.();
   }
+}
+
+/**
+ * Node matches --allow-fs-* grants by path prefix, so a grant on ".../apps/aa" could otherwise
+ * also cover ".../apps/aaa". A trailing separator pins the grant to that directory's contents.
+ */
+function withSep(dir: string): string {
+  return dir.endsWith('/') || dir.endsWith('\\') ? dir : dir + '/';
 }

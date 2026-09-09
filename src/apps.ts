@@ -8,6 +8,20 @@ import { normalizeEmail } from './auth.js';
 export const MAX_BUNDLE_BYTES = 5 * 1024 * 1024; // small software stays small
 export const MAX_FILES = 500;
 const ROUTE_EXT = new Set(['.js', '.mjs']);
+
+/**
+ * Builtins a route may not reference. This is a deploy-time guardrail, not the boundary:
+ * it catches the accidental and the obvious (and gives the agent a message it can act on),
+ * while `src/sandbox-host.mjs` blocks the modules at load time. See SECURITY.md.
+ */
+const DENIED_BUILTINS = [
+  'sqlite', 'fs', 'fs/promises', 'child_process', 'worker_threads', 'cluster', 'module',
+  'net', 'tls', 'dgram', 'dns', 'http', 'https', 'http2', 'inspector', 'os', 'v8', 'vm',
+  'repl', 'process',
+];
+const DENIED_RE = new RegExp(
+  String.raw`(?:require\s*\(|import\s*\(|from)\s*['"\`](?:node:)?(` + DENIED_BUILTINS.join('|') + String.raw`)['"\`]`,
+);
 const TEXT_EXT = new Set(['.html', '.htm', '.css', '.js', '.mjs', '.json', '.txt', '.md', '.svg', '.csv', '.xml', '.map', '.webmanifest']);
 
 export class DeployError extends Error {
@@ -59,6 +73,13 @@ export class Apps {
         const rel = p.slice(4);
         if (rel.includes('/')) throw new DeployError('bad_path', `"${p}": api/ routes must be flat files, e.g. api/todos.js (put shared code in api/_lib.js)`);
         if (!ROUTE_EXT.has(extname(rel))) throw new DeployError('bad_path', `"${p}": api/ files must be .js (ES modules)`);
+        const banned = DENIED_RE.exec(f.encoding === 'base64' ? Buffer.from(f.content, 'base64').toString('utf8') : f.content);
+        if (banned) {
+          throw new DeployError(
+            'denied_import',
+            `"${p}" imports "${banned[1]}", which apps may not use. Use ctx.db for storage, ctx.files for files, and ctx.fetch for HTTP.`,
+          );
+        }
       }
       const bytes = f.encoding === 'base64' ? Buffer.byteLength(f.content, 'base64') : Buffer.byteLength(f.content, 'utf8');
       total += bytes;

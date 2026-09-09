@@ -24,7 +24,7 @@ that app's directory:
 
 | Guarantee | Test |
 |---|---|
-| An app cannot read files outside its own directory (including the platform database) | `an app cannot read a file outside its own directory` |
+| An app cannot read files outside its own directory **via `fs`** | `an app cannot read a file outside its own directory` |
 | An app cannot read another app's database | `an app cannot read another app's database` |
 | An app cannot write outside its own data directory | `an app cannot write outside its data directory` |
 | An app cannot spawn a process | `an app cannot spawn a process` |
@@ -36,6 +36,8 @@ that app's directory:
 | Bundle paths cannot escape the app directory | `bundle paths cannot escape the app directory` |
 | Static serving cannot escape `public/` | `static serving cannot escape the public directory` |
 | `ctx.files` names cannot traverse | `ctx.files rejects names that traverse` |
+| A route importing `node:sqlite` (or another denied builtin) is rejected at deploy time | `deploying a route that imports a denied builtin is rejected` |
+| An app cannot open the platform database through `node:sqlite` **(Node >= 22.15 only)** | `an app cannot read the platform database through node:sqlite` |
 
 Other controls:
 
@@ -51,13 +53,40 @@ Other controls:
   app requests 300/min per IP.
 - **CSRF**: form posts are same-origin checked and cookies are SameSite=Lax.
 
+## The `node:sqlite` gap (read this before opening an instance)
+
+**Node's permission model does not cover the native file access inside `node:sqlite`.**
+Verified on Node 22.14: with `--permission` active, `fs.readFileSync(platformDb)` fails with
+`ERR_ACCESS_DENIED`, while `new DatabaseSync(platformDb)` opens the file and reads it. An app
+that does this reads every session id and API token hash on the instance, which is full
+account takeover.
+
+Three layers address it. Know which ones you have:
+
+| Layer | Stops | Active when |
+|---|---|---|
+| Deploy-time guardrail | any route whose source references a denied builtin | always |
+| Load-time block (`module.registerHooks`) | the same imports built at runtime, e.g. `import('node:'+'sqlite')` | **Node >= 22.15** |
+| OS user separation (`SC_APP_UID`) | all of it, at the kernel, whatever Node does | POSIX, when configured |
+
+The deploy-time guardrail is a guardrail, not a boundary: it is string matching and can be
+evaded by an author who wants to. On Node < 22.15 with no `SC_APP_UID`, treat anyone who can
+deploy as having read access to the platform database. `npm test` reports this as a skipped
+test naming the gap rather than passing.
+
+**Recommended production configuration**: Node >= 22.15 (the bundled Docker image) **and**
+`SC_APP_UID`/`SC_APP_GID` pointing at a user that cannot read `platform.db` (chmod it 0600
+and own it as the platform user). That combination does not depend on the permission model
+covering any particular builtin.
+
 ## What is not defended in v1
 
 Be honest with yourself about these before you open an instance up.
 
-1. **Hostile deployers.** `--permission` is a strong boundary but it is not a VM. Someone
-   determined to break out, who is allowed to deploy arbitrary code, may manage it. Only
-   let people you trust deploy.
+1. **Hostile deployers.** `--permission` is a useful boundary but it is not a VM, and as the
+   section above shows it does not cover every builtin. Someone determined to break out, who
+   is allowed to deploy arbitrary code, may manage it. Only let people you trust deploy, and
+   configure `SC_APP_UID` if that assumption ever weakens.
 2. **Cross-app browser isolation.** All apps share one origin (`/a/<slug>`), so an XSS in
    one app can reach another app's DOM and same-origin requests within that browser. Per-app
    subdomains are the fix and are planned for v1.x. Until then, treat apps deployed to one
@@ -65,9 +94,10 @@ Be honest with yourself about these before you open an instance up.
 3. **DNS rebinding.** `ctx.fetch` blocks private addresses by hostname and literal IP, not
    by re-resolving after the DNS lookup. A hostile app author could still reach the local
    network with a rebinding trick.
-4. **Raw sockets.** `node:net` is reachable from app code, so an app can open TCP
-   connections. Every control-plane endpoint requires authentication, so this does not
-   grant access to platform data, but it is not a sealed network boundary.
+4. **Raw sockets.** `node:net` is denied at deploy time and blocked at load time on Node
+   >= 22.15, but on older Node a runtime-built specifier still reaches it, so an app can open
+   TCP connections. Every control-plane endpoint requires authentication, so this does not
+   by itself grant access to platform data.
 5. **Side channels.** No mitigation for timing or resource-contention side channels
    between apps on the same box.
 6. **Denial of service by a co-tenant.** An app that burns CPU is killed after 10s, but it

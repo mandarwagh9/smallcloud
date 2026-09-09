@@ -92,7 +92,10 @@ HTML/CSS/JS or ES modules.
 
 - Bundle: 5 MB, 500 files max.
 - A request must finish in 10 seconds; the app gets 128 MB of heap.
-- \`api/\` code may use **Node built-ins only** (no npm packages in v1). \`fetch\` is available.
+- \`api/\` code may not use npm packages in v1, and may not import these built-ins:
+  \`sqlite\`, \`fs\`, \`child_process\`, \`worker_threads\`, \`net\`, \`http\`, \`os\`, \`process\`, \`module\`, \`vm\`
+  (a deploy that references one is rejected). Use \`ctx.db\` for storage, \`ctx.files\` for files
+  and \`ctx.fetch\` for HTTP. Safe built-ins such as \`crypto\`, \`path\`, \`url\` and \`buffer\` are fine.
 - The app can read only its own folder and write only its own data. It cannot start processes.
 - Redeploying keeps the same URL, database and files. Deploy with the same \`appId\` to update.
 

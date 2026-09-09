@@ -7,6 +7,9 @@ export interface Config {
   secret: string;
   allowedEmails: string[];
   trustProxy: boolean;
+  /** POSIX only. Run app processes as this user so the OS, not Node, enforces isolation. */
+  appUid?: number;
+  appGid?: number;
 }
 
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
@@ -25,5 +28,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
       .map((s) => s.trim())
       .filter(Boolean),
     trustProxy: env.SC_TRUST_PROXY === '1' || env.SC_TRUST_PROXY === 'true',
+    appUid: env.SC_APP_UID ? Number(env.SC_APP_UID) : undefined,
+    appGid: env.SC_APP_GID ? Number(env.SC_APP_GID) : undefined,
   };
 }

@@ -94,7 +94,7 @@ The owner can additionally delete the app.
 
 ## What it deliberately is not
 
-Not a scale-out cloud. Not a place to let strangers deploy code. Not a code generator, and
+Requires Node >= 22.15. Not a scale-out cloud. Not a place to let strangers deploy code. Not a code generator, and
 not a no-code builder. It is the deploy-and-share layer for software that will only ever
 have a few users. Read [SECURITY.md](SECURITY.md) for the isolation boundary and its
 limits before you open an instance to anyone you would not hand a shell.
@@ -111,7 +111,7 @@ smallcloud-specific except the `ctx` object, which is about forty lines to reimp
 ## Development
 
 ```bash
-npm test          # 52 tests: unit, ACL matrix, isolation, and the end-to-end journeys
+npm test          # 54 tests: unit, ACL matrix, isolation, and the end-to-end journeys
 npm run typecheck
 npm run build
 ```

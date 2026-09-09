@@ -33,7 +33,7 @@ test('an app cannot read a file outside its own directory', async () => {
   const secret = join(h.services.cfg.dataDir, 'platform.db');
   const { body } = await probe(
     'fs-escape',
-    `const fs = await import('node:fs');
+    `const fs = await import('node:' + 'fs');
      try { const b = fs.readFileSync(${JSON.stringify(secret)}); return { json: { result: 'LEAKED', bytes: b.length } }; }
      catch (e) { return { json: { result: 'blocked', code: e.code } }; }`,
   );
@@ -48,7 +48,7 @@ test('an app cannot read another app’s database', async () => {
   writeFileSync(otherDb, 'not really a db, but readable');
   const { body } = await probe(
     'cross-app',
-    `const fs = await import('node:fs');
+    `const fs = await import('node:' + 'fs');
      try { fs.readFileSync(${JSON.stringify(otherDb)}); return { json: { result: 'LEAKED' } }; }
      catch (e) { return { json: { result: 'blocked', code: e.code } }; }`,
   );
@@ -59,7 +59,7 @@ test('an app cannot write outside its data directory', async () => {
   const target = join(h.services.cfg.dataDir, 'escaped.txt');
   const { body } = await probe(
     'fs-write',
-    `const fs = await import('node:fs');
+    `const fs = await import('node:' + 'fs');
      try { fs.writeFileSync(${JSON.stringify(target)}, 'x'); return { json: { result: 'LEAKED' } }; }
      catch (e) { return { json: { result: 'blocked', code: e.code } }; }`,
   );
@@ -70,7 +70,7 @@ test('an app cannot write outside its data directory', async () => {
 test('an app cannot spawn a process', async () => {
   const { body } = await probe(
     'spawn',
-    `try { const cp = await import('node:child_process'); cp.spawnSync(process.execPath, ['-e', '0']); return { json: { result: 'LEAKED' } }; }
+    `try { const cp = await import('node:' + 'child_process'); cp.spawnSync(process.execPath, ['-e', '0']); return { json: { result: 'LEAKED' } }; }
      catch (e) { return { json: { result: 'blocked', code: e.code ?? e.constructor.name } }; }`,
   );
   assert.equal(body.result, 'blocked', 'an app spawned a process');
@@ -80,7 +80,7 @@ test('an app cannot spawn a process', async () => {
 test('an app cannot start a worker thread', async () => {
   const { body } = await probe(
     'worker',
-    `try { const w = await import('node:worker_threads'); new w.Worker('0', { eval: true }); return { json: { result: 'LEAKED' } }; }
+    `try { const w = await import('node:' + 'worker_threads'); new w.Worker('0', { eval: true }); return { json: { result: 'LEAKED' } }; }
      catch (e) { return { json: { result: 'blocked', code: e.code ?? e.constructor.name } }; }`,
   );
   assert.equal(body.result, 'blocked', 'an app started a worker thread');
@@ -176,4 +176,59 @@ test('ctx.files rejects names that traverse', async () => {
   assert.equal(body['ok.txt'], 'written');
   assert.equal(body['/abs.txt'], 'rejected');
   assert.equal(body['../escape.txt'], 'rejected');
+});
+
+// --- the node:sqlite gap (see SECURITY.md) --------------------------------
+//
+// Node's permission model governs `fs`, but not the native file access inside `node:sqlite`.
+// Two independent layers close it: a deploy-time guardrail that rejects the import outright,
+// and a load-time block inside the app process (Node >= 22.15, which has module.registerHooks).
+
+test('deploying a route that imports a denied builtin is rejected', async () => {
+  for (const [code, mod] of [
+    [`import { DatabaseSync } from 'node:sqlite';`, 'sqlite'],
+    [`const { DatabaseSync } = await import('node:sqlite');`, 'sqlite'],
+    [`import fs from 'node:fs';`, 'fs'],
+    [`import net from 'net';`, 'net'],
+  ]) {
+    const { status, body } = await h.json('/v1/apps', {
+      method: 'POST',
+      token,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        files: [
+          { path: 'app.json', content: '{"name":"denied"}' },
+          { path: 'api/x.js', content: `${code} export default () => ({ json: {} });` },
+        ],
+      }),
+    });
+    assert.equal(status, 400, `${code} was accepted`);
+    assert.equal(body.error, 'denied_import');
+    assert.match(body.message, new RegExp(mod));
+    assert.match(body.message, /ctx\./, 'the error must point the agent at the supported API');
+  }
+});
+
+test('an app cannot read the platform database through node:sqlite', async (t) => {
+  const platformDb = join(h.services.cfg.dataDir, 'platform.db').replaceAll(String.fromCharCode(92), '/');
+  const { body } = await probe(
+    'sqlite-escape',
+    `try {
+       const { DatabaseSync } = await import('node:' + 'sqlite');
+       const db = new DatabaseSync(${JSON.stringify(platformDb)}, { readOnly: true });
+       return { json: { result: 'LEAKED', rows: db.prepare('select email from api_tokens').all().length } };
+     } catch (e) { return { json: { result: 'blocked', code: e.code ?? e.message } }; }`,
+  );
+  const { BUILTINS_BLOCKED } = await import('../src/sandbox-host.mjs');
+  if (!BUILTINS_BLOCKED) {
+    // Do not pretend this passes. It is a real, open hole on this Node version.
+    t.diagnostic(
+      `KNOWN GAP: Node ${process.versions.node} has no module.registerHooks, so an app that ` +
+        `constructs the specifier at runtime still reaches the platform database (result: ${body.result}). ` +
+        'Run on Node >= 22.15, or set SC_APP_UID. See SECURITY.md.',
+    );
+    t.skip('requires Node >= 22.15 (module.registerHooks) or SC_APP_UID');
+    return;
+  }
+  assert.equal(body.result, 'blocked', 'an app read the platform database via node:sqlite');
 });

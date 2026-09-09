@@ -9,6 +9,44 @@ import { DatabaseSync } from 'node:sqlite';
 import { readFileSync, writeFileSync, readdirSync, unlinkSync, existsSync, mkdirSync } from 'node:fs';
 import { join, extname, basename } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import * as nodeModule from 'node:module';
+
+/**
+ * Builtins an app may not load.
+ *
+ * This matters more than it looks. Node's permission model governs `fs`, but NOT the native
+ * file access inside `node:sqlite` -- an app that opens the platform database directly with
+ * `new DatabaseSync(...)` reads every session and API token hash, with `--permission` on.
+ * Blocking the module is what closes that hole. `registerHooks` is synchronous and needs no
+ * worker thread, so it works inside a permission-restricted process (Node >= 22.15).
+ */
+const DENIED_BUILTINS = new Set([
+  'sqlite', 'fs', 'fs/promises', 'child_process', 'worker_threads', 'cluster', 'module',
+  'net', 'tls', 'dgram', 'dns', 'dns/promises', 'http', 'https', 'http2', 'inspector',
+  'os', 'v8', 'vm', 'repl', 'trace_events', 'perf_hooks', 'tty', 'readline', 'process',
+]);
+
+export const BUILTINS_BLOCKED = typeof nodeModule.registerHooks === 'function';
+
+if (BUILTINS_BLOCKED) {
+  nodeModule.registerHooks({
+    resolve(specifier, context, nextResolve) {
+      const bare = specifier.startsWith('node:') ? specifier.slice(5) : specifier;
+      if (DENIED_BUILTINS.has(bare)) {
+        const err = new Error(`"${specifier}" is not available to apps on smallcloud. Use ctx.db, ctx.files or ctx.fetch instead.`);
+        err.code = 'ERR_MODULE_BLOCKED';
+        throw err;
+      }
+      return nextResolve(specifier, context);
+    },
+  });
+} else {
+  // Surfaces in the app's logs and in `smallcloud logs`, so this is never silent.
+  process.stderr.write(
+    `[smallcloud] WARNING: Node ${process.versions.node} has no module.registerHooks, so apps can still load node:sqlite ` +
+      'and read the platform database. Upgrade to Node >= 22.15, or isolate app processes with SC_APP_UID. See SECURITY.md.\n',
+  );
+}
 
 const APP_ID = process.env.SC_APP_ID;
 const BUNDLE = process.env.SC_BUNDLE_DIR;
@@ -241,8 +279,28 @@ function inspectish(v) {
   }
 }
 
+/**
+ * Run SQL against this app's own database, on behalf of an owner or editor debugging it.
+ * It runs here rather than in the control plane on purpose: statements like VACUUM INTO and
+ * ATTACH can write files, and inside this process they can only reach this app's directory.
+ */
+function runSql(m) {
+  try {
+    const isRead = /^\s*(select|pragma|with|explain)/i.test(m.sql);
+    const stmt = getDb().prepare(m.sql);
+    const params = m.params ?? [];
+    if (isRead) return { t: 'sql-result', invokeId: m.invokeId, ok: true, result: { rows: stmt.all(...params) } };
+    const r = stmt.run(...params);
+    return { t: 'sql-result', invokeId: m.invokeId, ok: true, result: { changes: num(r.changes), lastInsertRowid: num(r.lastInsertRowid) } };
+  } catch (err) {
+    return { t: 'sql-result', invokeId: m.invokeId, ok: false, message: err && err.message ? err.message : String(err) };
+  }
+}
+
 process.on('message', (m) => {
-  if (!m || m.t !== 'invoke') return;
+  if (!m) return;
+  if (m.t === 'sql') return send(runSql(m));
+  if (m.t !== 'invoke') return;
   invoke(m).then(send, (err) => {
     send({
       t: 'result',

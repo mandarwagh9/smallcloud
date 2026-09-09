@@ -35,6 +35,11 @@ npx smallcloud mcp-install
 | `EMAIL_FROM` | no | Sender for magic links. |
 | `SC_ALLOWED_EMAILS` | no | Comma-separated allowlist. Empty means anyone may sign in. |
 | `SC_TRUST_PROXY` | no | Set to `1` behind a reverse proxy so rate limits see real IPs. |
+| `SC_APP_UID` / `SC_APP_GID` | recommended | POSIX only. Run app processes as this user so the OS enforces isolation. The Docker image sets both to 10001. See SECURITY.md. |
+
+**Node version matters for isolation.** Run Node >= 22.15: older versions lack
+`module.registerHooks`, so apps can load `node:sqlite` and read `platform.db` directly.
+The bundled image is on a supported version; `npm test` names the gap if you are not.
 
 ## Backups
 
