@@ -199,3 +199,17 @@ test('the contract warns that a path segment cannot contain a separator', async 
   assert.match(CONTRACT, /encoded separator/, 'agents need to know an encoded slash is rejected');
   assert.match(CONTRACT, /percent-decoded/, 'and that segments are decoded');
 });
+
+test('AGENTS.md is in sync with the contract it is generated from', async () => {
+  const { CONTRACT } = await import('../src/contract.js');
+  const { readFileSync, existsSync } = await import('node:fs');
+  const { fileURLToPath } = await import('node:url');
+  const { dirname, join } = await import('node:path');
+  const repo = join(dirname(fileURLToPath(import.meta.url)), '..');
+  const path = join(repo, 'AGENTS.md');
+  assert.ok(existsSync(path), 'AGENTS.md should exist; run: npm run agents');
+  // It is written by `npm run agents`, so it drifts the moment someone edits contract.ts and
+  // forgets. Compare ignoring line endings, since git normalises them on this repo.
+  const onDisk = readFileSync(path, 'utf8').split('\r\n').join('\n');
+  assert.equal(onDisk.trim(), CONTRACT.trim(), 'AGENTS.md is stale; run: npm run agents');
+});
