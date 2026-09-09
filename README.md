@@ -111,7 +111,7 @@ smallcloud-specific except the `ctx` object, which is about forty lines to reimp
 ## Development
 
 ```bash
-npm test               # 64 tests: unit, ACL matrix, isolation, and the end-to-end journeys
+npm test               # 66 tests: unit, ACL matrix, isolation, and the end-to-end journeys
 npm run typecheck
 npm run build
 

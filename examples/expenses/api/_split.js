@@ -12,14 +12,22 @@ export function settle(expenses) {
   if (!people.length) return { total: 0, perPerson: 0, balances: [], transfers: [] };
 
   const total = expenses.reduce((n, e) => n + e.cents, 0);
-  const share = Math.round(total / people.length);
 
-  const balances = people
+  // Rounding each share independently does not add back up to the total: three people and
+  // 100 cents gives 33+33+33, and the missing cent makes every balance slightly wrong. Give
+  // the remainder out one cent at a time instead, in a fixed order so it is reproducible.
+  const sorted = [...people].sort();
+  const base = Math.floor(total / sorted.length);
+  const remainder = total - base * sorted.length;
+  const shareOf = new Map(sorted.map((who, i) => [who, base + (i < remainder ? 1 : 0)]));
+
+  const balances = sorted
     .map((who) => ({
       who,
       paid: expenses.filter((e) => e.who === who).reduce((n, e) => n + e.cents, 0),
+      share: shareOf.get(who),
     }))
-    .map((b) => ({ ...b, net: b.paid - share }))
+    .map((b) => ({ ...b, net: b.paid - b.share }))
     .sort((a, b) => b.net - a.net);
 
   const creditors = balances.filter((b) => b.net > 0).map((b) => ({ ...b }));
@@ -35,7 +43,8 @@ export function settle(expenses) {
     if (debtors[i].net === 0) i++;
     if (creditors[j].net === 0) j++;
   }
-  return { total, perPerson: share, balances, transfers };
+  // perPerson is the even split; individual shares differ by at most a cent (see above).
+  return { total, perPerson: base, balances, transfers };
 }
 
 export function parseAmount(raw) {

@@ -109,7 +109,17 @@ export function escapeHtml(s: string): string {
   return String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 }
 
-/** Fixed-window counter. Enough for sign-in and deploy abuse; not a distributed limiter. */
+/**
+ * Fixed-window counter. Enough for sign-in and deploy abuse; not a distributed limiter.
+ *
+ * The map is hard-bounded. Sweeping only expired entries is not enough on its own: with more
+ * live keys than the cap (many client IPs inside one window), every insert would rescan the
+ * whole map, free nothing, and grow it anyway -- an O(n) tax per request that gets worse as it
+ * goes. When a sweep cannot get under the cap, the oldest entries are evicted instead. Evicting
+ * a counter is safe in the generous direction: the key simply starts a fresh window.
+ */
+const MAX_TRACKED_KEYS = 5000;
+
 export class RateLimiter {
   private hits = new Map<string, { n: number; resetAt: number }>();
 
@@ -124,8 +134,8 @@ export class RateLimiter {
     const t = this.now();
     const cur = this.hits.get(key);
     if (!cur || cur.resetAt <= t) {
+      if (this.hits.size >= MAX_TRACKED_KEYS) this.evict(t);
       this.hits.set(key, { n: 1, resetAt: t + this.windowMs });
-      if (this.hits.size > 5000) this.sweep(t);
       return true;
     }
     if (cur.n >= this.limit) return false;
@@ -133,8 +143,21 @@ export class RateLimiter {
     return true;
   }
 
-  private sweep(t: number): void {
+  /** Visible for tests. */
+  size(): number {
+    return this.hits.size;
+  }
+
+  private evict(t: number): void {
     for (const [k, v] of this.hits) if (v.resetAt <= t) this.hits.delete(k);
+    if (this.hits.size < MAX_TRACKED_KEYS) return;
+    // Still full of live windows: drop the oldest tenth. Map preserves insertion order, so
+    // the first keys are the ones whose windows started earliest.
+    let drop = Math.ceil(MAX_TRACKED_KEYS / 10);
+    for (const k of this.hits.keys()) {
+      if (drop-- <= 0) break;
+      this.hits.delete(k);
+    }
   }
 }
 

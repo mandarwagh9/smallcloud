@@ -19,8 +19,16 @@ function setup(ctx) {
 
 export default async function (req, ctx) {
   setup(ctx);
-  const who = ctx.user ? ctx.user.email : 'anonymous';
+  // One identity for the whole request. ctx.user is null only on a publicly shared app; in
+  // that case there is nobody to attribute an expense to and nobody the "only the person who
+  // added it can remove it" rule could protect, so writes are refused rather than filed under
+  // a shared "anonymous" that everyone would then be able to edit.
+  const who = ctx.user ? ctx.user.email : null;
   const id = Number(req.subpath.replace('/', '')) || null;
+
+  if (req.method !== 'GET' && !who) {
+    return { status: 401, json: { error: 'sign in to add or change expenses' } };
+  }
 
   if (req.method === 'POST' && !id) {
     const { what, amount } = req.json() ?? {};
@@ -46,5 +54,5 @@ export default async function (req, ctx) {
 
 function load(ctx, who) {
   const expenses = ctx.db.all('select * from expenses order by id desc');
-  return { you: ctx.user ? who : null, expenses, settlement: settle(expenses) };
+  return { you: who, expenses, settlement: settle(expenses) };
 }

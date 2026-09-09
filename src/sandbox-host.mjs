@@ -7,7 +7,7 @@
 
 import { DatabaseSync } from 'node:sqlite';
 import { readFileSync, writeFileSync, readdirSync, unlinkSync, existsSync, mkdirSync } from 'node:fs';
-import { join, extname, basename } from 'node:path';
+import { join, extname, basename, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as nodeModule from 'node:module';
 
@@ -147,8 +147,18 @@ async function appFetch(input, init) {
 
 // ---- routing --------------------------------------------------------------
 
+/** A route selects a file, so it must be a single plain filename -- never a path. */
+const SAFE_ROUTE = /^[A-Za-z0-9._-]*$/;
+
 async function loadRoute(route) {
   if (moduleCache.has(route)) return moduleCache.get(route);
+  // Defence in depth: the control plane already rejects separators and traversal in a path
+  // segment, but this is the sink that turns a route into a filename and then imports it, so
+  // it refuses anything that is not a plain name and re-checks containment after resolving.
+  if (!SAFE_ROUTE.test(route) || route === '.' || route === '..') {
+    moduleCache.set(route, null);
+    return null;
+  }
   let file = null;
   for (const ext of ['.js', '.mjs']) {
     const candidate = join(BUNDLE, 'api', route + ext);
@@ -167,6 +177,11 @@ async function loadRoute(route) {
     }
   }
   if (!file) {
+    moduleCache.set(route, null);
+    return null;
+  }
+  const apiDir = join(BUNDLE, 'api');
+  if (!resolve(file).startsWith(resolve(apiDir) + sep)) {
     moduleCache.set(route, null);
     return null;
   }

@@ -1,4 +1,5 @@
 import { readFileSync, rmSync, existsSync } from 'node:fs';
+import { randomId } from './crypto.js';
 import { join } from 'node:path';
 import { SqlError } from './runtime.js';
 import type { Services, RequestCtx } from './server.js';
@@ -201,20 +202,29 @@ export async function handleApi(s: Services, ctx: RequestCtx): Promise<void> {
 async function exportEntries(s: Services, app: AppRecord): Promise<Array<{ path: string; data: Buffer }>> {
   const entries = s.apps.exportEntries(app.id);
   const paths = s.apps.paths(app.id);
-  const snapshot = join(paths.data, 'export-snapshot.db');
-  rmSync(snapshot, { force: true }); // VACUUM INTO refuses to overwrite
+  // A unique name per request: two exports at once would otherwise fight over one path, and
+  // VACUUM INTO refuses to overwrite, so the loser silently shipped the un-checkpointed file.
+  const snapshot = join(paths.data, `export-snapshot-${randomId(6)}.db`);
 
   let data: Buffer | null = null;
   try {
     await s.runtime.sql(app.id, `vacuum into '${snapshot.split("'").join("''")}'`);
     data = readFileSync(snapshot);
   } catch (err) {
-    // An app with no bundle cannot be started, so fall back to whatever is on disk rather
-    // than failing the export outright. Say so in the log; a stale copy is worth flagging.
-    s.apps.log(app.id, 'error', `export could not snapshot the database (${(err as Error).message}); falling back to the raw file`);
+    // An app that has never been deployed has no process to snapshot through; that is the
+    // only case worth degrading for. Anything else means the export would silently be wrong,
+    // and handing someone a stale database labelled as their data is worse than an error.
+    if (existsSync(paths.bundle)) {
+      throw new HttpError(503, 'export_failed', `could not snapshot the database (${(err as Error).message}); try again in a moment`);
+    }
+    s.apps.log(app.id, 'error', `export ran without a bundle (${(err as Error).message}); shipping the database as-is`);
     if (existsSync(paths.db)) data = readFileSync(paths.db);
   } finally {
-    rmSync(snapshot, { force: true });
+    try {
+      rmSync(snapshot, { force: true });
+    } catch {
+      // Cleanup must never turn a good export into a failed request.
+    }
   }
   if (data) entries.push({ path: 'app.db', data });
   return entries;

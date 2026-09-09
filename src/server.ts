@@ -169,6 +169,13 @@ async function runRoute(s: Services, ctx: RequestCtx, app: AppRecord, apiPath: s
   } catch {
     return sendJson(res, 400, { error: 'bad_path', message: 'the request path is not valid percent-encoding' });
   }
+  // Decoding happens after the split so %2F cannot invent a segment boundary -- but it can
+  // still put a separator or a dot-dot INSIDE a segment, and the first segment is used as a
+  // filename by the app host. Without this, "..%2f..%2fdata%2ffiles%2fevil" selected a file
+  // the app itself had uploaded and ran it. Segments are path components, so treat them so.
+  if (seg.some((x) => x === '.' || x === '..' || x.includes('/') || x.includes('\\') || hasControlChar(x))) {
+    return sendJson(res, 400, { error: 'bad_path', message: 'a path segment may not contain a separator or a path traversal' });
+  }
   const route = seg[0] ?? '';
   const subpath = seg.length > 1 ? '/' + seg.slice(1).join('/') : '';
   const bodyBuf = ['GET', 'HEAD'].includes(ctx.method) ? null : await readBody(req);
@@ -267,6 +274,11 @@ function serveStatic(s: Services, ctx: RequestCtx, app: AppRecord, tail: string)
     stream.pipe(res);
   });
   res.once('close', () => stream.destroy());
+}
+
+function hasControlChar(s: string): boolean {
+  for (let i = 0; i < s.length; i++) if (s.charCodeAt(i) < 32) return true;
+  return false;
 }
 
 /** Join that refuses to leave the base directory. */

@@ -515,5 +515,44 @@ raised, **10 confirmed and 2 refuted**. All 10 are fixed; the two worst I reprod
 Refuted and deliberately not acted on: a claimed missing `'error'` listener on the forked child,
 and a claim that the contract's blocked-builtin list is short by 15 modules.
 
+## Multi-agent audit, round two (2026-09-09)
+
+Five dimensions the first round did not cover -- the just-changed code, the CLI/MCP client, the
+browser pages, concurrency, and the example apps -- same refute-by-default verification. 15 agents,
+10 findings raised, **9 confirmed and 1 refuted**.
+
+The headline finding is a **regression the first round's own fix introduced**, which is the whole
+argument for auditing new code:
+
+> **Remote code execution via the api route (high).** Round one made api path segments
+> percent-decoded. Decoding after the split stops `%2F` inventing a segment boundary, but it still
+> puts a real `/` and `..` *inside* a segment -- and the first segment is used by the app host as a
+> filename. `GET /a/<slug>/api/..%2f..%2fdata%2ffiles%2fevil` imported and executed a file the app
+> had stored through `ctx.files`. I reproduced it end to end: an **anonymous** visitor to a publicly
+> shared app uploaded JS through the app's own upload route, got the platform to run it, and read
+> the app's decrypted secret (`sk-live-SECRET`). It also defeated the documented "api/_*.js are
+> helpers, not routes" rule.
+
+Fixed at both ends: the control plane rejects any decoded segment that is `.`, `..`, or contains a
+separator or control character, and `loadRoute` in the sandbox host now requires a plain filename and
+re-checks containment after resolving. One earlier test had to be inverted -- it asserted that an
+encoded slash survives inside a segment, which is precisely the hazard.
+
+The other eight, all fixed:
+
+| Severity | Problem | Fix |
+|---|---|---|
+| high | `~/.smallcloud/config.json` was written 0644 in a 0755 directory and holds a never-expiring token authorizing every endpoint. On a shared box any local account could take over. | 0700 dir, 0600 file, plus an explicit chmod (writeFileSync keeps an existing file's mode, so old configs are repaired). |
+| high | Concurrent exports shared one snapshot path; `VACUUM INTO` refuses to overwrite, so the loser silently shipped the un-checkpointed database -- the exact data-loss bug round one had just fixed. | Unique snapshot name per request. |
+| high | `examples/expenses` computed two different identities per request, so the ownership guard was vacuous for anonymous users on a public app. | One identity; writes refused when nobody is signed in. |
+| medium | Export's fallback was silent: any snapshot failure shipped a stale database at HTTP 200. | Only degrade when the app has no bundle at all; otherwise 503 so the caller retries. |
+| medium | A network-level failure (server down, wrong URL) crashed the CLI with a raw undici stack. | Becomes an `unreachable` ApiError naming the URL and what to check. |
+| medium | The app name was interpolated into a JS string inside the delete form's `onsubmit`, so `escapeHtml` did not stop injection. | No JS built from templates; the handler reads the already-escaped DOM. |
+| medium | `RateLimiter`'s map was unbounded: past 5000 live keys every insert rescanned the whole map and freed nothing. | Hard cap with oldest-first eviction, and a `size()` for tests. |
+| medium | `settle()` rounded each share, so transfers never balanced and the per-person figure did not multiply back to the total. | Distribute the remainder a cent at a time in a fixed order; verified `sum(shares) == total` and transfers settle exactly. |
+
+Refuted and not acted on: a claim that `statSync` on the static path is still TOCTOU after round
+one's stream fix.
+
 **Still not done**: the rest of M5 -- a public landing/docs site, and the name, license and domain
 decisions, which are Mandar's calls (section 13).

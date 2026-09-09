@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, existsSync, chmodSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 import type { AppFile } from './types.js';
@@ -46,8 +46,18 @@ export function loadConfig(): ClientConfig | null {
 }
 
 export function saveConfig(c: ClientConfig): string {
-  mkdirSync(join(homedir(), '.smallcloud'), { recursive: true });
-  writeFileSync(CONFIG_PATH, JSON.stringify(c, null, 2));
+  // This file holds a bearer token that authorizes everything the account can do and never
+  // expires, so it must not be readable by other accounts on a shared box. writeFileSync keeps
+  // an existing file's mode, hence the explicit chmod: it repairs configs written before this.
+  mkdirSync(join(homedir(), '.smallcloud'), { recursive: true, mode: 0o700 });
+  writeFileSync(CONFIG_PATH, JSON.stringify(c, null, 2), { mode: 0o600 });
+  if (process.platform !== 'win32') {
+    try {
+      chmodSync(CONFIG_PATH, 0o600);
+    } catch {
+      // A filesystem without POSIX modes is not a reason to fail the login.
+    }
+  }
   return CONFIG_PATH;
 }
 
@@ -65,14 +75,19 @@ export class Client {
   }
 
   async request<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
-    const res = await fetch(`${this.cfg.url}${path}`, {
-      method,
-      headers: {
-        authorization: `Bearer ${this.cfg.token}`,
-        ...(body === undefined ? {} : { 'content-type': 'application/json' }),
-      },
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${this.cfg.url}${path}`, {
+        method,
+        headers: {
+          authorization: `Bearer ${this.cfg.token}`,
+          ...(body === undefined ? {} : { 'content-type': 'application/json' }),
+        },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+    } catch (err) {
+      throw new ApiError(0, 'unreachable', `could not reach ${this.cfg.url} (${(err as Error).message}). Is the server running? Check SMALLCLOUD_URL, or run: smallcloud login <url>`);
+    }
     const text = await res.text();
     const json = text ? safeParse(text) : {};
     if (!res.ok) {
@@ -131,9 +146,14 @@ export class Client {
   }
 
   async exportZip(id: string): Promise<Buffer> {
-    const res = await fetch(`${this.cfg.url}/v1/apps/${encodeURIComponent(id)}/export`, {
-      headers: { authorization: `Bearer ${this.cfg.token}` },
-    });
+    let res: Response;
+    try {
+      res = await fetch(`${this.cfg.url}/v1/apps/${encodeURIComponent(id)}/export`, {
+        headers: { authorization: `Bearer ${this.cfg.token}` },
+      });
+    } catch (err) {
+      throw new ApiError(0, 'unreachable', `could not reach ${this.cfg.url} (${(err as Error).message}). Is the server running?`);
+    }
     if (!res.ok) throw new ApiError(res.status, 'export_failed', await res.text());
     return Buffer.from(await res.arrayBuffer());
   }

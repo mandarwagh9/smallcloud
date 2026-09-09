@@ -8,6 +8,7 @@ import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import * as nodeModule from 'node:module'; // namespace: registerHooks does not exist before 22.15
 import { startHarness, deploy, bundle, type Harness } from './helpers.js';
+import { RateLimiter } from '../src/httputil.js';
 
 let h: Harness;
 let token: string;
@@ -315,4 +316,66 @@ test('a file vanishing mid-stream does not take the control plane down', () => {
   assert.ok(out.includes('SURVIVED'), `the control plane died during the race:
 ${out.slice(-1200)}`);
   assert.equal(r.status, 0, `child exited ${r.status}`);
+});
+
+// The worst regression this project has had: percent-decoding the api path per segment put a
+// real "/" and ".." inside `route`, which the app host used as a filename. An anonymous
+// visitor to a public app could upload .js through the app's own ctx.files endpoint and then
+// make the platform import and run it, reading the app's decrypted secrets.
+test('an api route cannot traverse out of api/ and execute an uploaded file', async () => {
+  const app = await deploy(
+    h,
+    token,
+    bundle({
+      'app.json': JSON.stringify({ name: 'traversal' }),
+      'public/index.html': 'hi',
+      'api/up.js': `export default (req, ctx) => {
+        ctx.files.put('evil.js', 'export default (req, ctx) => ({ json: { pwned: true, stole: ctx.env.SECRET_KEY } })');
+        return { json: { stored: true } };
+      }`,
+      'api/_helper.js': 'export default () => ({ json: { helper: "reached" } })',
+    }),
+  );
+  await h.json(`/v1/apps/${app.id}/secrets`, {
+    method: 'PUT',
+    token,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ key: 'SECRET_KEY', value: 'sk-live-do-not-leak' }),
+  });
+  await h.json(`/v1/apps/${app.id}/shares`, {
+    method: 'PUT',
+    token,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ principal: 'public' }),
+  });
+
+  assert.equal((await h.json(`/a/${app.slug}/api/up`, { method: 'POST' })).status, 200, 'the upload route itself still works');
+
+  // every shape of traversal, unauthenticated
+  for (const attempt of [
+    '..%2f..%2fdata%2ffiles%2fevil',
+    '..%2F..%2Fdata%2Ffiles%2Fevil',
+    '.%2F_helper',
+    '%2e%2e%2f%2e%2e%2fdata%2ffiles%2fevil',
+    '..%5c..%5cdata%5cfiles%5cevil',
+  ]) {
+    const res = await h.json(`/a/${app.slug}/api/${attempt}`);
+    assert.equal(res.status, 400, `${attempt} returned ${res.status}`);
+    assert.equal(res.body.error, 'bad_path');
+    assert.ok(!JSON.stringify(res.body).includes('sk-live'), 'a secret must never come back');
+  }
+
+  // and the documented invariant that api/_*.js are helpers, not routes, still holds
+  assert.equal((await h.fetch(`/a/${app.slug}/api/_helper`)).status, 404);
+});
+
+test('the rate limiter map stays bounded under many distinct keys', () => {
+  const limiter = new RateLimiter(10, 60_000);
+  for (let i = 0; i < 20_000; i++) limiter.take(`key-${i}`);
+  assert.ok(limiter.size() <= 5000, `the limiter grew to ${limiter.size()} entries`);
+  // and it still limits correctly for a key it is tracking
+  const fresh = new RateLimiter(2, 60_000);
+  assert.equal(fresh.take('a'), true);
+  assert.equal(fresh.take('a'), true);
+  assert.equal(fresh.take('a'), false);
 });
