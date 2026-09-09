@@ -206,7 +206,7 @@ async function runRoute(s: Services, ctx: RequestCtx, app: AppRecord, apiPath: s
  * one the app chose. Everything outside this list is dropped and logged, so an agent can see
  * why its header did not arrive.
  */
-const APP_HEADER_ALLOWLIST = new Set([
+export const APP_HEADER_ALLOWLIST = new Set([
   'content-type',
   'content-disposition',
   'content-language',
