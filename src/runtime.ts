@@ -213,6 +213,8 @@ export class Runtime {
         p.resolve(failure);
       }
       host.pending.clear();
+      if (host.idleTimer) clearTimeout(host.idleTimer);
+      host.idleTimer = null;
       if (this.hosts.get(appId) === host) this.hosts.delete(appId);
     });
 
@@ -237,10 +239,17 @@ export class Runtime {
     }
   }
 
-  /** Reset the idle countdown; an app with no traffic for IDLE_SHUTDOWN_MS exits. */
+  /**
+   * Reset the idle countdown; an app with no traffic for IDLE_SHUTDOWN_MS exits.
+   *
+   * The callback checks that this host is still the current one. Without that, a host whose
+   * child exited on its own left its timer armed, and when it fired it called stop(appId) --
+   * killing whatever healthy replacement process had started in the meantime.
+   */
   private touch(appId: string, host: Host): void {
     if (host.idleTimer) clearTimeout(host.idleTimer);
     host.idleTimer = setTimeout(() => {
+      if (this.hosts.get(appId) !== host) return; // superseded; not ours to stop
       if (host.pending.size === 0) this.stop(appId);
       else this.touch(appId, host);
     }, IDLE_SHUTDOWN_MS);

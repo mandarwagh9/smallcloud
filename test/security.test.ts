@@ -282,3 +282,37 @@ test('a filesystem grant does not leak into a sibling directory with a longer na
   const out = (r.stdout || r.stderr || '').trim();
   assert.match(out, /^blocked/, `a grant on ${granted} reached ${sibling}: ${out}`);
 });
+
+test('the device-login token is not sitting in the database in cleartext', () => {
+  const start = h.services.auth.startCliLogin();
+  h.services.auth.approveCliLogin(start.code, 'owner@example.com');
+
+  const row = h.services.db.prepare('select token from cli_logins where code = ?').get(start.code) as { token: string };
+  assert.ok(row.token, 'a token should be parked for the CLI to collect');
+  assert.ok(!row.token.startsWith('sc_'), `the raw token is in platform.db: ${row.token.slice(0, 12)}...`);
+
+  // it still round-trips to a working token exactly once
+  const polled = h.services.auth.pollCliLogin(start.code);
+  assert.equal(polled.status, 'approved');
+  assert.match((polled as { token: string }).token, /^sc_/);
+  assert.equal(h.services.auth.userFromApiToken((polled as { token: string }).token)?.email, 'owner@example.com');
+  assert.equal(h.services.auth.pollCliLogin(start.code).status, 'unknown', 'and is handed over only once');
+});
+
+test('a file vanishing mid-stream does not take the control plane down', () => {
+  // Runs in a child with UV_THREADPOOL_SIZE=1 so the open() of a static read queues behind a
+  // busy threadpool, widening a window that exists anyway: a concurrent redeploy removes the
+  // file, the open fails with ENOENT, and an unguarded read stream would emit 'error' with no
+  // listener and kill the server -- every app on the instance with it.
+  // Verified to fail (ENOENT, exit 1) when the error handler in serveStatic is removed.
+  const fixture = join(import.meta.dirname, 'fixtures', 'stream-race.ts');
+  const r = spawnSync(process.execPath, ['--no-warnings=ExperimentalWarning', '--import', 'tsx', fixture], {
+    encoding: 'utf8',
+    env: { ...process.env, UV_THREADPOOL_SIZE: '1' },
+    timeout: 120_000,
+  });
+  const out = `${r.stdout ?? ''}${r.stderr ?? ''}`;
+  assert.ok(out.includes('SURVIVED'), `the control plane died during the race:
+${out.slice(-1200)}`);
+  assert.equal(r.status, 0, `child exited ${r.status}`);
+});

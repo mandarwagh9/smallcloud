@@ -1,7 +1,7 @@
 import type { Db } from './db.js';
 import type { Mailer } from './email.js';
 import type { User } from './types.js';
-import { randomToken, sha256 } from './crypto.js';
+import { randomToken, sha256, encrypt, decrypt } from './crypto.js';
 
 const MAGIC_TTL_MS = 15 * 60 * 1000;
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -16,6 +16,8 @@ export interface AuthOptions {
   mailer: Mailer;
   baseUrl: string;
   allowedEmails?: string[]; // empty = anyone
+  /** Encrypts the token parked for a pending device login. Defaults to a per-process value. */
+  secret?: string;
   now?: () => number;
 }
 
@@ -24,6 +26,7 @@ export class Auth {
   private mailer: Mailer;
   private baseUrl: string;
   private allowed: Set<string>;
+  private secret: string;
   private now: () => number;
 
   constructor(o: AuthOptions) {
@@ -31,6 +34,7 @@ export class Auth {
     this.mailer = o.mailer;
     this.baseUrl = o.baseUrl.replace(/\/$/, '');
     this.allowed = new Set((o.allowedEmails ?? []).map(normalizeEmail).filter(Boolean));
+    this.secret = o.secret || randomToken(32);
     this.now = o.now ?? Date.now;
   }
 
@@ -132,7 +136,7 @@ export class Auth {
    * the person opens it in a signed-in browser and approves, the CLI polls and receives a token.
    */
   startCliLogin(): { code: string; url: string } {
-    this.db.prepare('delete from cli_logins where created_at < ?').run(this.now() - CLI_LOGIN_TTL_MS);
+    this.sweepCliLogins();
     const code = randomToken(16);
     this.db.prepare('insert into cli_logins (code, created_at) values (?, ?)').run(code, this.now());
     return { code, url: `${this.baseUrl}/cli/${code}` };
@@ -144,19 +148,31 @@ export class Auth {
       | undefined;
     if (!row || row.token || row.created_at + CLI_LOGIN_TTL_MS < this.now()) return false;
     const token = this.createApiToken(email, 'cli');
-    this.db.prepare('update cli_logins set token = ? where code = ?').run(token, code);
+    // SECURITY.md promises API tokens are never stored in a usable form. This row briefly
+    // holds a real, working token for the CLI to collect, so it is encrypted at rest with the
+    // same key as app secrets rather than sitting in the clear in platform.db.
+    this.db.prepare('update cli_logins set token = ? where code = ?').run(encrypt(this.secret, token), code);
     return true;
   }
 
   /** Returns the token exactly once, then forgets it. */
   pollCliLogin(code: string): { status: 'pending' } | { status: 'approved'; token: string } | { status: 'unknown' } {
+    this.sweepCliLogins();
     const row = this.db.prepare('select token, created_at from cli_logins where code = ?').get(code) as
       | { token: string | null; created_at: number }
       | undefined;
-    if (!row || row.created_at + CLI_LOGIN_TTL_MS < this.now()) return { status: 'unknown' };
+    if (!row || row.created_at + CLI_LOGIN_TTL_MS < this.now()) {
+      if (row) this.db.prepare('delete from cli_logins where code = ?').run(code);
+      return { status: 'unknown' };
+    }
     if (!row.token) return { status: 'pending' };
     this.db.prepare('delete from cli_logins where code = ?').run(code);
-    return { status: 'approved', token: row.token };
+    return { status: 'approved', token: decrypt(this.secret, row.token) };
+  }
+
+  /** Expired device logins may still be holding an encrypted token; drop them. */
+  private sweepCliLogins(): void {
+    this.db.prepare('delete from cli_logins where created_at < ?').run(this.now() - CLI_LOGIN_TTL_MS);
   }
 }
 

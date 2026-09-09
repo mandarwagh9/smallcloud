@@ -87,6 +87,19 @@ export class Apps {
       seen.add(p);
       out.push({ path: p, content: f.content, encoding: f.encoding === 'base64' ? 'base64' : 'utf8' });
     }
+    // "public/a" as a file and "public/a/b.html" as a file cannot both exist on a filesystem.
+    // Catch it here so the agent gets a message it can act on instead of an EEXIST/ENOTDIR
+    // from deep inside the bundle writer, after the app record has been touched.
+    for (const p of seen) {
+      const parts = p.split('/');
+      for (let i = 1; i < parts.length; i++) {
+        const ancestor = parts.slice(0, i).join('/');
+        if (seen.has(ancestor)) {
+          throw new DeployError('path_conflict', `"${ancestor}" is both a file and a directory (because of "${p}"); rename one of them`);
+        }
+      }
+    }
+
     const manifestFile = out.find((f) => f.path === 'app.json');
     if (!manifestFile) throw new DeployError('no_manifest', 'bundle needs an app.json with at least {"name": "..."}');
     let manifest: Manifest;
@@ -106,28 +119,43 @@ export class Apps {
 
   // ---- lifecycle -----------------------------------------------------------
 
-  /** Create a new app, or redeploy an existing one in place (its id, url, db and files survive). */
+  /**
+   * Create a new app, or redeploy an existing one in place (its id, url, db and files survive).
+   *
+   * The bundle is written to disk *before* the database is touched. The other order leaves a
+   * committed row pointing at an app with no bundle when the write fails (a full disk, a bad
+   * path, a failed rename): the dashboard lists it, its URL 500s, and a redeploy reports a
+   * version that was never actually written. Nothing here is atomic across both stores, so the
+   * order is chosen to fail toward "the old version is still serving" rather than "the record
+   * says something that is not true".
+   */
   deploy(owner: User, rawFiles: AppFile[], existingId?: string): AppRecord {
     const { manifest, files } = this.validate(rawFiles);
     const now = Date.now();
-    let rec: AppRecord;
+
     if (existingId) {
       const cur = this.get(existingId);
       if (!cur) throw new DeployError('not_found', `no app with id ${existingId}`);
+      this.writeBundle(cur.id, files);
       this.db
         .prepare('update apps set name = ?, description = ?, version = version + 1, updated_at = ? where id = ?')
         .run(manifest.name, manifest.description ?? '', now, cur.id);
-      rec = this.get(cur.id)!;
-    } else {
-      const id = randomId(9);
-      const slug = this.uniqueSlug(slugify(manifest.name) || 'app');
+      return this.get(cur.id)!;
+    }
+
+    const id = randomId(9);
+    const slug = this.uniqueSlug(slugify(manifest.name) || 'app');
+    this.writeBundle(id, files);
+    try {
       this.db
         .prepare('insert into apps (id, slug, name, description, owner_email, version, created_at, updated_at) values (?, ?, ?, ?, ?, 1, ?, ?)')
         .run(id, slug, manifest.name, manifest.description ?? '', normalizeEmail(owner.email), now, now);
-      rec = this.get(id)!;
+    } catch (err) {
+      // Nothing references this directory yet, so removing it leaves no trace of the attempt.
+      rmSync(this.paths(id).root, { recursive: true, force: true });
+      throw err;
     }
-    this.writeBundle(rec.id, files);
-    return rec;
+    return this.get(id)!;
   }
 
   private writeBundle(appId: string, files: AppFile[]): void {
@@ -204,7 +232,14 @@ export class Apps {
     return out.sort((a, b) => a.path.localeCompare(b.path));
   }
 
-  /** Everything needed to leave: bundle, database file, uploaded files. */
+  /**
+   * The parts of an export that can be read straight off disk: the bundle and uploaded files.
+   *
+   * The database is deliberately NOT here. In WAL mode the newest commits live in app.db-wal,
+   * so copying app.db alone can hand someone a database missing recent rows -- or, if the
+   * schema itself was created after the last checkpoint, no tables at all. The caller adds a
+   * consistent snapshot taken through the app's own process; see exportApp() in api.ts.
+   */
   exportEntries(appId: string): Array<{ path: string; data: Buffer }> {
     const p = this.paths(appId);
     const out: Array<{ path: string; data: Buffer }> = [];
@@ -219,7 +254,6 @@ export class Apps {
     };
     walk(p.bundle, 'app');
     walk(p.files, 'files');
-    if (existsSync(p.db)) out.push({ path: 'app.db', data: readFileSync(p.db) });
     return out.filter((e) => e.path !== 'app/package.json');
   }
 
