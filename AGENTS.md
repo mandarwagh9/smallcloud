@@ -15,6 +15,10 @@ The platform supplies hosting, a database, file storage, sign-in, sharing and se
 Requests to `/a/<slug>/api/todos` run `api/todos.js`. If there is no file for a route,
 `api/index.js` handles it (use it as a catch-all router).
 
+Each path segment is one component: it is percent-decoded, so `/api/notes/hello%20world` gives
+you `hello world`, but a segment may not contain an encoded separator or `..` (that request is
+rejected with 400). If an identifier of yours can contain a slash, put it in the query string.
+
 ## Writing a route
 
 ```js
@@ -70,6 +74,13 @@ may open the app: smallcloud already did that before your code ran.
 | `{status, headers, body}` | exactly that |
 | a Uint8Array/Buffer | raw bytes |
 | nothing | 204 |
+
+**Headers you may set.** `content-type`, `content-disposition`, `content-language`,
+`cache-control`, `location`, `etag`, `last-modified`, `vary`, `refresh`, `link`, and any
+header starting with `x-`. Anything else is dropped and the reason is written to your app log.
+In particular an app cannot set `set-cookie`: apps share an origin with the platform, so a
+cookie from an app could overwrite the visitor's sign-in session. Keep per-visitor state in
+`ctx.db` keyed by `ctx.user.email` instead.
 
 ## Frontend
 

@@ -172,3 +172,30 @@ test('zip writes a readable archive header', () => {
   assert.ok(buf.includes(Buffer.from('hello')));
   assert.equal(buf.readUInt32LE(buf.length - 22), 0x06054b50, 'end of central directory magic');
 });
+
+// The contract is the only document an agent reads, and a "contract-truth" auditor already
+// found one place where it promised something the code did not do. These pin the specific
+// claims most likely to drift: what an app may set, and what a path segment may contain.
+test('the contract lists exactly the response headers the code allows', async () => {
+  const { CONTRACT } = await import('../src/contract.js');
+  const { APP_HEADER_ALLOWLIST } = await import('../src/server.js');
+
+  const section = CONTRACT.slice(CONTRACT.indexOf('**Headers you may set.**'));
+  const documented = new Set(
+    [...section.slice(0, section.indexOf('Anything else')).matchAll(/`([a-z-]+)`/g)].map((m) => m[1]).filter((h) => h !== 'x-'),
+  );
+
+  for (const h of APP_HEADER_ALLOWLIST) {
+    assert.ok(documented.has(h), `the code allows "${h}" but the contract does not mention it`);
+  }
+  for (const h of documented) {
+    assert.ok(APP_HEADER_ALLOWLIST.has(h), `the contract promises "${h}" but the code drops it`);
+  }
+  assert.match(section, /cannot set `set-cookie`/, 'the contract must say why set-cookie is refused');
+});
+
+test('the contract warns that a path segment cannot contain a separator', async () => {
+  const { CONTRACT } = await import('../src/contract.js');
+  assert.match(CONTRACT, /encoded separator/, 'agents need to know an encoded slash is rejected');
+  assert.match(CONTRACT, /percent-decoded/, 'and that segments are decoded');
+});
