@@ -609,9 +609,12 @@ test('api route paths are percent-decoded like every other path in a request', a
   assert.equal(res.body.subpath, '/hello world/café', 'segments should arrive decoded');
   assert.equal(res.body.route, 'echo');
 
-  // an encoded slash must stay inside one segment, not invent a new one
+  // An encoded separator inside a segment is refused outright. It used to be preserved, which
+  // is exactly what let `..%2f..%2f...` reach a file outside api/ and get executed. A path
+  // segment is a path component; an app that needs a slash in an identifier uses the query.
   const enc = await h.json(`/a/${app.slug}/api/echo/a%2Fb`, { token: ownerToken });
-  assert.equal(enc.body.subpath, '/a/b');
+  assert.equal(enc.status, 400);
+  assert.equal(enc.body.error, 'bad_path');
 
   // malformed encoding is a clean 400, not a crash
   const bad = await h.fetch(`/a/${app.slug}/api/echo/%ZZ`, { token: ownerToken });

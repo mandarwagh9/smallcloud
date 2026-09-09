@@ -15,7 +15,8 @@ export default async function (req, ctx) {
   if (!expense) return { status: 404, json: { error: 'no such expense' } };
 
   if (req.method === 'POST') {
-    const who = ctx.user ? ctx.user.email : 'anonymous';
+    const who = ctx.user ? ctx.user.email : null;
+    if (!who) return { status: 401, json: { error: 'sign in to attach a receipt' } };
     if (expense.who !== who) return { status: 403, json: { error: 'only the person who added the expense can attach a receipt' } };
 
     const type = (req.headers['content-type'] ?? '').split(';')[0].trim();

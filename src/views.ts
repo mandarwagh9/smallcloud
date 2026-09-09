@@ -292,7 +292,17 @@ ${secretKeys.length ? `<p class="mono">${secretKeys.map(escapeHtml).join(', ')}<
 
 <h2>Export and delete</h2>
 <p><a class="btn ghost" href="/v1/apps/${escapeHtml(app.id)}/export">Download everything (.zip)</a>
-${isOwner ? `<form method="post" action="/apps/${escapeHtml(app.id)}/delete" style="display:inline; margin-left:8px" onsubmit="return confirm('Delete ${escapeHtml(app.name)} and all its data? This cannot be undone.')"><button class="danger" type="submit">Delete app</button></form>` : ''}</p>`,
+${isOwner ? `<form method="post" action="/apps/${escapeHtml(app.id)}/delete" style="display:inline; margin-left:8px" data-confirm-delete><button class="danger" type="submit">Delete app</button></form>` : ''}</p>
+<script>
+// The app name is author-controlled, so it never goes into a JS string. It is read from the
+// already-escaped DOM at click time instead.
+document.querySelectorAll('form[data-confirm-delete]').forEach(function (f) {
+  f.addEventListener('submit', function (e) {
+    var name = document.querySelector('h1') ? document.querySelector('h1').textContent : 'this app';
+    if (!confirm('Delete ' + name + ' and all its data? This cannot be undone.')) e.preventDefault();
+  });
+});
+</script>`,
     { user, wide: true },
   );
 }
