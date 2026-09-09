@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type Server as NodeServer, type ServerResponse } from 'node:http';
-import { createReadStream, existsSync, statSync } from 'node:fs';
+import { createReadStream, existsSync, statSync, fstatSync } from 'node:fs';
 import { join, extname, normalize, sep } from 'node:path';
 import type { Db } from './db.js';
 import { openPlatformDb } from './db.js';
@@ -250,7 +250,12 @@ function serveStatic(s: Services, ctx: RequestCtx, app: AppRecord, tail: string)
 
   const stat = statSync(file);
   if (ctx.method === 'HEAD') {
-    res.writeHead(200, { 'content-type': mimeFor(extname(file)), 'content-length': stat.size, 'cache-control': 'no-cache' });
+    res.writeHead(200, {
+      'content-type': mimeFor(extname(file)),
+      'content-length': stat.size,
+      'cache-control': 'no-cache',
+      'x-content-type-options': 'nosniff',
+    });
     return void res.end();
   }
 
@@ -264,10 +269,19 @@ function serveStatic(s: Services, ctx: RequestCtx, app: AppRecord, tail: string)
     if (res.headersSent) return void res.destroy();
     notFound(ctx, `this app has no file at /${tail}`);
   });
-  stream.once('open', () => {
+  stream.once('open', (fd: number) => {
+    // Size comes from the file we actually opened, not the earlier statSync. A redeploy
+    // between the two can swap the file, and a content-length that disagrees with the body
+    // makes the browser hang waiting for bytes that never come, or truncates the response.
+    let size = stat.size;
+    try {
+      size = fstatSync(fd).size;
+    } catch {
+      // Fall back to the earlier stat; being slightly wrong beats failing the request.
+    }
     res.writeHead(200, {
       'content-type': mimeFor(extname(file)),
-      'content-length': stat.size,
+      'content-length': size,
       'cache-control': 'no-cache',
       'x-content-type-options': 'nosniff',
     });
