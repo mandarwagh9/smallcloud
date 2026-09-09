@@ -37,7 +37,7 @@ export interface Services {
   runtime: Runtime;
   mailer: Mailer;
   secure: boolean;
-  limiters: { login: RateLimiter; loginIp: RateLimiter; deploy: RateLimiter; app: RateLimiter };
+  limiters: { login: RateLimiter; loginIp: RateLimiter; deploy: RateLimiter; appStatic: RateLimiter; appApi: RateLimiter };
 }
 
 export interface RequestCtx {
@@ -69,7 +69,12 @@ export function createServices(cfg: Config, mailer?: Mailer): Services {
       login: new RateLimiter(5, 15 * 60_000),
       loginIp: new RateLimiter(20, 15 * 60_000),
       deploy: new RateLimiter(30, 60 * 60_000),
-      app: new RateLimiter(300, 60_000),
+      // Per app, per client IP. These match the capacity targets in docs/PLAN.md NF2 on
+      // purpose: a limit below the throughput the platform claims to support would reject
+      // traffic the box can serve. A page view is several requests, and a whole office can
+      // share one IP, so the static budget is the larger of the two.
+      appStatic: new RateLimiter(cfg.staticRpm, 60_000),
+      appApi: new RateLimiter(cfg.apiRpm, 60_000),
     },
   };
 }
@@ -137,11 +142,16 @@ async function serveApp(s: Services, ctx: RequestCtx): Promise<void> {
     return redirect(res, `${url.pathname}/${url.search}`);
   }
 
-  if (!s.limiters.app.take(`${app.id}:${ctx.ip}`)) {
-    return sendJson(res, 429, { error: 'rate_limited', message: 'too many requests to this app; slow down' });
+  const isApi = tail === 'api' || tail.startsWith('api/');
+  const limiter = isApi ? s.limiters.appApi : s.limiters.appStatic;
+  if (!limiter.take(`${app.id}:${ctx.ip}`)) {
+    return sendJson(res, 429, {
+      error: 'rate_limited',
+      message: `too many requests to this app from your address (limit ${isApi ? s.cfg.apiRpm : s.cfg.staticRpm} per minute); slow down`,
+    });
   }
 
-  if (tail === 'api' || tail.startsWith('api/')) return runRoute(s, ctx, app, tail.slice(3).replace(/^\//, ''));
+  if (isApi) return runRoute(s, ctx, app, tail.slice(3).replace(/^\//, ''));
   return serveStatic(s, ctx, app, tail);
 }
 

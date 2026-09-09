@@ -29,6 +29,8 @@ export async function startHarness(env: Partial<Record<string, string>> = {}): P
     secret: 'test-secret-0123456789',
     allowedEmails: env.SC_ALLOWED_EMAILS ? env.SC_ALLOWED_EMAILS.split(',') : [],
     trustProxy: false,
+    staticRpm: 100000,
+    apiRpm: 100000,
   };
   const services = createServices(cfg, mail);
   const server = createHttpServer(services);

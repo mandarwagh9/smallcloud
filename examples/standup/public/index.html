@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Standup</title>
+<style>
+  :root {
+    --ground:#f4f5f3; --panel:#fff; --ink:#16181b; --muted:#63696e; --line:#dcdedb; --accent:#3340d8;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --ground:#121417; --panel:#1a1d21; --ink:#e8eaec; --muted:#969ba1; --line:#2b2f34; --accent:#8f9bff; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--ground); color:var(--ink);
+         font:15px/1.55 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  main { max-width: 620px; margin: 0 auto; padding: 36px 20px 64px; }
+  header { display:flex; align-items:baseline; gap:12px; margin-bottom: 22px; }
+  h1 { font-size: 23px; letter-spacing:-0.02em; margin:0; }
+  .you { margin-left:auto; font-size:13px; color:var(--muted); font-family: ui-monospace, monospace; }
+  form { display:flex; gap:8px; margin-bottom: 28px; }
+  textarea { flex:1; min-height:64px; resize:vertical; padding:10px 12px; font:inherit;
+             color:var(--ink); background:var(--panel); border:1px solid var(--line); border-radius:6px; }
+  textarea:focus { outline:2px solid var(--accent); outline-offset:1px; }
+  button { align-self:flex-start; padding:10px 16px; font:500 14px/1 inherit; color:#fff;
+           background:var(--accent); border:0; border-radius:6px; cursor:pointer; }
+  h2 { font-size:11.5px; letter-spacing:0.08em; text-transform:uppercase; color:var(--muted);
+       margin:26px 0 10px; font-weight:600; }
+  ul { list-style:none; margin:0; padding:0; }
+  li { padding:11px 0; border-top:1px solid var(--line); display:flex; gap:12px; align-items:baseline; }
+  .who { font-family: ui-monospace, monospace; font-size:12.5px; color:var(--muted); flex:0 0 auto; }
+  .text { white-space:pre-wrap; }
+  .empty { color:var(--muted); padding:26px 0; }
+</style>
+</head>
+<body>
+<main>
+  <header><h1>Standup</h1><span class="you" id="you"></span></header>
+  <form id="add">
+    <textarea id="text" placeholder="What are you working on?" required></textarea>
+    <button>Post</button>
+  </form>
+  <div id="log"></div>
+</main>
+<script type="module">
+const log = document.getElementById('log');
+const you = document.getElementById('you');
+
+// Relative to the app root, so the app works wherever it is mounted.
+const api = (opts) => fetch('api/entries', opts).then((r) => {
+  if (!r.ok) throw new Error('request failed: ' + r.status);
+  return r.json();
+});
+
+function render(data) {
+  you.textContent = data.you ?? 'not signed in';
+  log.innerHTML = '';
+  if (!data.days.length) {
+    log.innerHTML = '<p class="empty">Nothing yet. Post the first update.</p>';
+    return;
+  }
+  for (const day of data.days) {
+    const h = document.createElement('h2');
+    h.textContent = day.day === data.today ? 'Today' : day.day;
+    const ul = document.createElement('ul');
+    for (const e of day.entries) {
+      const li = document.createElement('li');
+      const who = document.createElement('span');
+      who.className = 'who';
+      who.textContent = e.who;
+      const text = document.createElement('span');
+      text.className = 'text';
+      text.textContent = e.text;
+      li.append(who, text);
+      ul.append(li);
+    }
+    log.append(h, ul);
+  }
+}
+
+document.getElementById('add').onsubmit = async (e) => {
+  e.preventDefault();
+  const box = document.getElementById('text');
+  const data = await api({
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ text: box.value }),
+  });
+  box.value = '';
+  render(data);
+};
+
+render(await api());
+</script>
+</body>
+</html>

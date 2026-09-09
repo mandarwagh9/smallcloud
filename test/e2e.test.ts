@@ -2,6 +2,7 @@
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { startHarness, deploy, todoBundle, bundle, type Harness } from './helpers.js';
+import { RateLimiter } from '../src/httputil.js';
 
 let h: Harness;
 let ownerToken: string;
@@ -438,4 +439,31 @@ test('the app root redirects to its directory form so relative URLs work', async
   const followed = await fetch(`${h.base}/a/${app.slug}`, { headers: { authorization: `Bearer ${ownerToken}` } });
   assert.equal(followed.status, 200);
   assert.match(await followed.text(), /doctype/i);
+});
+
+test('static and API rate limits are separate and say what the limit is', async () => {
+  const tight = await startHarness();
+  tight.services.cfg.staticRpm = 3;
+  tight.services.cfg.apiRpm = 2;
+  (tight.services.limiters as any).appStatic = new RateLimiter(3, 60_000);
+  (tight.services.limiters as any).appApi = new RateLimiter(2, 60_000);
+  const token = tight.tokenFor('owner@acme.com');
+  const app = await deploy(tight, token, todoBundle('Limited'));
+
+  const hit = (p: string) => tight.fetch(`/a/${app.slug}${p}`, { token });
+  assert.equal((await hit('/')).status, 200);
+  assert.equal((await hit('/')).status, 200);
+  assert.equal((await hit('/')).status, 200);
+  const limited = await hit('/');
+  assert.equal(limited.status, 429, 'the static budget should run out');
+  assert.match((await limited.json()).message, /3 per minute/, 'the error should name the limit');
+
+  // the API has its own budget, untouched by the static requests above
+  assert.equal((await hit('/api/todos')).status, 200);
+  assert.equal((await hit('/api/todos')).status, 200);
+  const apiLimited = await hit('/api/todos');
+  assert.equal(apiLimited.status, 429);
+  assert.match((await apiLimited.json()).message, /2 per minute/);
+
+  await tight.close();
 });

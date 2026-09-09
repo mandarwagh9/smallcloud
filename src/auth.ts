@@ -6,6 +6,8 @@ import { randomToken, sha256 } from './crypto.js';
 const MAGIC_TTL_MS = 15 * 60 * 1000;
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const CLI_LOGIN_TTL_MS = 10 * 60 * 1000;
+/** How stale an api_token.last_used value may be before we spend a write updating it. */
+const LAST_USED_RESOLUTION_MS = 60 * 1000;
 
 export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -100,9 +102,17 @@ export class Auth {
   userFromApiToken(raw: string | null | undefined): User | null {
     if (!raw || !raw.startsWith('sc_')) return null;
     const hash = sha256(raw);
-    const row = this.db.prepare('select email from api_tokens where hash = ?').get(hash) as { email: string } | undefined;
+    const row = this.db.prepare('select email, last_used from api_tokens where hash = ?').get(hash) as
+      | { email: string; last_used: number | null }
+      | undefined;
     if (!row) return null;
-    this.db.prepare('update api_tokens set last_used = ? where hash = ?').run(this.now(), hash);
+    // "Last used" only needs to be roughly right, and this runs on every single request an
+    // agent makes -- including every static asset. Writing it each time put a SQLite write
+    // (and a WAL flush) on the hot path for no benefit.
+    const now = this.now();
+    if (!row.last_used || now - row.last_used > LAST_USED_RESOLUTION_MS) {
+      this.db.prepare('update api_tokens set last_used = ? where hash = ?').run(now, hash);
+    }
     return { email: row.email };
   }
 

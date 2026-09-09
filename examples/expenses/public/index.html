@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Expenses</title>
+<style>
+  :root { --ground:#f4f5f3; --panel:#fff; --ink:#16181b; --muted:#63696e; --line:#dcdedb;
+          --accent:#3340d8; --owed:#0f6f5c; --owes:#9a3412; }
+  @media (prefers-color-scheme: dark) {
+    :root { --ground:#121417; --panel:#1a1d21; --ink:#e8eaec; --muted:#969ba1; --line:#2b2f34;
+            --accent:#8f9bff; --owed:#5fd0b4; --owes:#f0a480; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--ground); color:var(--ink);
+         font:15px/1.55 ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+  main { max-width:640px; margin:0 auto; padding:36px 20px 64px; }
+  header { display:flex; align-items:baseline; gap:12px; margin-bottom:6px; }
+  h1 { font-size:23px; letter-spacing:-0.02em; margin:0; }
+  .you { margin-left:auto; font-size:13px; color:var(--muted); font-family:ui-monospace,monospace; }
+  .totals { color:var(--muted); font-size:14px; margin:0 0 24px; }
+  form.add { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:26px; }
+  input { padding:10px 12px; font:inherit; color:var(--ink); background:var(--panel);
+          border:1px solid var(--line); border-radius:6px; }
+  input#what { flex:1 1 220px; }
+  input#amount { flex:0 0 110px; }
+  input:focus { outline:2px solid var(--accent); outline-offset:1px; }
+  button { padding:10px 16px; font:500 14px/1 inherit; color:#fff; background:var(--accent);
+           border:0; border-radius:6px; cursor:pointer; }
+  h2 { font-size:11.5px; letter-spacing:0.08em; text-transform:uppercase; color:var(--muted);
+       margin:28px 0 8px; font-weight:600; }
+  ul { list-style:none; margin:0; padding:0; }
+  li { display:flex; align-items:center; gap:12px; padding:11px 0; border-top:1px solid var(--line); }
+  .what { flex:1; }
+  .who { font-family:ui-monospace,monospace; font-size:12.5px; color:var(--muted); }
+  .amt { font-variant-numeric:tabular-nums; font-weight:500; }
+  .thumb { width:34px; height:34px; object-fit:cover; border-radius:4px; border:1px solid var(--line); }
+  .attach { font-size:12.5px; color:var(--accent); cursor:pointer; text-decoration:underline; }
+  .x { background:none; color:var(--muted); font-size:18px; padding:0 2px; }
+  .settle li { justify-content:space-between; }
+  .settle .from { color:var(--owes); font-family:ui-monospace,monospace; font-size:13px; }
+  .settle .to { color:var(--owed); font-family:ui-monospace,monospace; font-size:13px; }
+  .empty { color:var(--muted); padding:24px 0; }
+</style>
+</head>
+<body>
+<main>
+  <header><h1>Expenses</h1><span class="you" id="you"></span></header>
+  <p class="totals" id="totals"></p>
+
+  <form class="add" id="add">
+    <input id="what" placeholder="What was it for?" required autocomplete="off">
+    <input id="amount" placeholder="0.00" inputmode="decimal" required>
+    <button>Add</button>
+  </form>
+
+  <div id="list"></div>
+  <div id="settlement"></div>
+  <input type="file" id="picker" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+</main>
+<script type="module">
+const money = (cents) => (cents / 100).toFixed(2);
+const el = (id) => document.getElementById(id);
+const picker = el('picker');
+let pendingExpenseId = null;
+
+const api = (path = '', opts) => fetch('api/expenses' + path, opts).then(async (r) => {
+  const body = await r.json();
+  if (!r.ok) throw new Error(body.error ?? 'request failed');
+  return body;
+});
+
+function render(data) {
+  el('you').textContent = data.you ?? 'not signed in';
+  const s = data.settlement;
+  el('totals').textContent = data.expenses.length
+    ? `${money(s.total)} total across ${s.balances.length} ${s.balances.length === 1 ? 'person' : 'people'} — ${money(s.perPerson)} each`
+    : '';
+
+  const list = el('list');
+  list.innerHTML = '';
+  if (!data.expenses.length) {
+    list.innerHTML = '<p class="empty">No expenses yet. Add the first one.</p>';
+  } else {
+    const ul = document.createElement('ul');
+    for (const e of data.expenses) {
+      const li = document.createElement('li');
+
+      if (e.receipt) {
+        const img = document.createElement('img');
+        img.className = 'thumb';
+        img.src = 'api/receipts/' + e.id;
+        img.alt = 'receipt';
+        li.append(img);
+      }
+
+      const what = document.createElement('span');
+      what.className = 'what';
+      what.textContent = e.what;
+      const who = document.createElement('span');
+      who.className = 'who';
+      who.textContent = e.who;
+      const amt = document.createElement('span');
+      amt.className = 'amt';
+      amt.textContent = money(e.cents);
+      li.append(what, who, amt);
+
+      if (e.who === data.you) {
+        if (!e.receipt) {
+          const attach = document.createElement('span');
+          attach.className = 'attach';
+          attach.textContent = 'receipt';
+          attach.onclick = () => { pendingExpenseId = e.id; picker.click(); };
+          li.append(attach);
+        }
+        const x = document.createElement('button');
+        x.className = 'x';
+        x.textContent = '×';
+        x.title = 'Remove';
+        x.onclick = () => api('/' + e.id, { method: 'DELETE' }).then(render);
+        li.append(x);
+      }
+      ul.append(li);
+    }
+    list.append(ul);
+  }
+
+  const settle = el('settlement');
+  settle.innerHTML = '';
+  if (s.transfers.length) {
+    const h = document.createElement('h2');
+    h.textContent = 'Who pays whom';
+    const ul = document.createElement('ul');
+    ul.className = 'settle';
+    for (const t of s.transfers) {
+      const li = document.createElement('li');
+      const from = document.createElement('span');
+      from.className = 'from';
+      from.textContent = t.from;
+      const mid = document.createElement('span');
+      mid.textContent = 'pays';
+      mid.style.color = 'var(--muted)';
+      const to = document.createElement('span');
+      to.className = 'to';
+      to.textContent = t.to;
+      const amt = document.createElement('span');
+      amt.className = 'amt';
+      amt.textContent = money(t.cents);
+      li.append(from, mid, to, amt);
+      ul.append(li);
+    }
+    settle.append(h, ul);
+  }
+}
+
+el('add').onsubmit = async (e) => {
+  e.preventDefault();
+  const data = await api('', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ what: el('what').value, amount: el('amount').value }),
+  });
+  el('what').value = '';
+  el('amount').value = '';
+  render(data);
+};
+
+picker.onchange = async () => {
+  const file = picker.files[0];
+  if (!file || pendingExpenseId === null) return;
+  await fetch('api/receipts/' + pendingExpenseId, {
+    method: 'POST',
+    headers: { 'content-type': file.type },
+    body: file,
+  });
+  picker.value = '';
+  pendingExpenseId = null;
+  render(await api());
+};
+
+render(await api());
+</script>
+</body>
+</html>

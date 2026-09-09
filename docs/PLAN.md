@@ -463,4 +463,21 @@ high. Every app built to the contract was broken at the URL recipients are given
 Fixed by redirecting the no-slash form to the directory form, query string preserved, with a
 regression test in `test/e2e.test.ts`.
 
-**Still not done**: M4's VPS load run (T4.6) and all of M5.
+**Load sanity (T4.6, 2026-09-09).** `scripts/loadtest.mjs` against the production image, server
+pinned to 1 vCPU / 1 GB, client in a separate container. All NF2 targets met: static p50 3.6 ms at
+50 rps, API read 4.1 ms at 20 rps, API write 13.1 ms, cold start 57 ms, zero errors, no process leak.
+Numbers and how to reproduce are in RUNBOOK.md. It found two things:
+
+| Finding | Fix |
+|---|---|
+| **The app rate limit contradicted the plan's own capacity target.** NF2 asks for 50 rps static and 20 rps API, but the limiter allowed 300/min (5 rps), so the first run 429'd about 90% of the load. | Split into separate static and API limiters set to exactly the NF2 numbers (3000 and 1200 per minute, per app per IP), configurable with `SC_STATIC_RPM` / `SC_API_RPM`. |
+| **Every bearer-authenticated request did a database write**, updating `api_tokens.last_used` -- on the hot path for every static asset too. | Update it at most once a minute per token. Static p50 went 7.0 ms -> 3.6 ms and API read 8.2 ms -> 4.1 ms, so this was roughly a 2x throughput win for free. |
+
+**Examples (T5.2, done).** Three now: `todo` (multi-user), `standup` (a public log, shows the
+`ctx.user === null` path and day grouping), and `expenses` (the only example that uses `ctx.files`:
+receipt upload, retrieval, per-person authorization, and cleanup on delete, plus a settlement
+algorithm in an `api/_split.js` helper to show non-route files). All three were deployed to a live
+server and driven end to end; both new frontends were opened in a real browser.
+
+**Still not done**: the rest of M5 -- a public landing/docs site, and the name, license and domain
+decisions, which are Mandar's calls (section 13).

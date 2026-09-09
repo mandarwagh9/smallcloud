@@ -35,6 +35,8 @@ const cfg = {
   secret: 'uid-test-secret',
   allowedEmails: [],
   trustProxy: false,
+    staticRpm: 100000,
+    apiRpm: 100000,
   appUid: APP_UID,
   appGid: APP_GID,
 };
