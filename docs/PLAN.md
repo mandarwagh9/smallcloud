@@ -443,4 +443,24 @@ Four security tests also had to be rewritten: they asserted `ERR_ACCESS_DENIED` 
 Node >= 22.15 the load-time block fires first and returns `ERR_MODULE_BLOCKED`. They now assert the
 guarantee (the app did not reach the resource) rather than which layer delivered it, and pass on both.
 
-**Still not done**: M3's cold-agent eval harness (T3.6), M4's VPS load run (T4.6), and all of M5.
+**Cold agent test (S1 / T3.6, 2026-09-09).** `eval/cold-agent.mjs` stands up a real server, gives a
+*fresh* headless Claude Code session nothing but the smallcloud MCP server and an empty directory,
+and asks for a shared multi-user todo app. The harness never reads the app's source: it grades over
+HTTP the way a recipient would (frontend loads, both API routes behave, sharing works, the second
+person is attributed correctly, a stranger gets 403, tables exist in the app's own database).
+
+The first run passed all ten checks in 207s / 36 turns -- and reported a real platform bug, which is
+what the test is for:
+
+> smallcloud serves the app root at `/a/<slug>` with no trailing-slash redirect. The contract's
+> suggested `fetch('api/todos')` therefore resolves to `/a/api/todos` -> 404, so the page would have
+> looked broken at exactly the URL bob receives.
+
+Reproduced immediately: the share link the platform hands out has no trailing slash, so a relative
+URL in the app's own HTML -- which the contract tells agents to write -- resolves one directory too
+high. Every app built to the contract was broken at the URL recipients are given, including
+`examples/todo`; it only passed earlier tests because those requested `/a/todo/` with the slash.
+Fixed by redirecting the no-slash form to the directory form, query string preserved, with a
+regression test in `test/e2e.test.ts`.
+
+**Still not done**: M4's VPS load run (T4.6) and all of M5.

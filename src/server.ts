@@ -129,6 +129,14 @@ async function serveApp(s: Services, ctx: RequestCtx): Promise<void> {
   const role = roleFor(s.db, app, ctx.user);
   if (!canUse(role)) return denied(s, ctx, app);
 
+  // The share link is /a/<slug>, with no trailing slash. A relative URL in the app's own HTML
+  // -- which the contract tells agents to use -- resolves against /a/ from there rather than
+  // /a/<slug>/, so the app would 404 on its own API at exactly the URL recipients are sent.
+  // Redirect to the directory form first, the way a web server does for any directory URL.
+  if (slash < 0 && !url.pathname.endsWith('/')) {
+    return redirect(res, `${url.pathname}/${url.search}`);
+  }
+
   if (!s.limiters.app.take(`${app.id}:${ctx.ip}`)) {
     return sendJson(res, 429, { error: 'rate_limited', message: 'too many requests to this app; slow down' });
   }

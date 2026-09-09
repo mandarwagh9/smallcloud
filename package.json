@@ -18,7 +18,8 @@
     "typecheck": "tsc --noEmit",
     "build": "tsc && node -e \"require('fs').copyFileSync('src/sandbox-host.mjs','dist/sandbox-host.mjs')\"",
     "start": "node --no-warnings=ExperimentalWarning dist/cli.js serve",
-    "agents": "node --no-warnings=ExperimentalWarning --import tsx -e \"import('./src/contract.js').then(m=>require('fs').writeFileSync('AGENTS.md',m.CONTRACT))\""
+    "agents": "node --no-warnings=ExperimentalWarning --import tsx -e \"import('./src/contract.js').then(m=>require('fs').writeFileSync('AGENTS.md',m.CONTRACT))\"",
+    "eval:cold-agent": "node --no-warnings=ExperimentalWarning --import tsx eval/cold-agent.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

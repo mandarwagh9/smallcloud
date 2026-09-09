@@ -111,10 +111,17 @@ smallcloud-specific except the `ctx` object, which is about forty lines to reimp
 ## Development
 
 ```bash
-npm test          # 54 tests: unit, ACL matrix, isolation, and the end-to-end journeys
+npm test               # 55 tests: unit, ACL matrix, isolation, and the end-to-end journeys
 npm run typecheck
 npm run build
+
+npm run eval:cold-agent -- --runs 3   # give a fresh agent only the MCP server and grade what it ships
 ```
+
+The cold agent test is the real measure of whether the contract explains the platform: it hands a
+brand-new headless Claude Code session nothing but the MCP server and an empty folder, then grades
+the deployed app over HTTP. It already caught a bug no unit test would have (a missing
+trailing-slash redirect that broke every app at the exact URL its recipients were given).
 
 The plan this was built from, including architecture decisions and what is deferred, is in
 [docs/PLAN.md](docs/PLAN.md).

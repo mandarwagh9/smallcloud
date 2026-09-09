@@ -404,3 +404,38 @@ test('health and stats report the instance', async () => {
   assert.equal(stats.status, 200);
   assert.ok(typeof stats.body.apps === 'number');
 });
+
+// Found by the cold agent test (eval/cold-agent.mjs): the share link has no trailing slash,
+// so a relative fetch in the app's own page resolved one directory too high and 404'd at
+// exactly the URL recipients are given.
+test('the app root redirects to its directory form so relative URLs work', async () => {
+  const app = await deploy(
+    h,
+    ownerToken,
+    bundle({
+      'app.json': '{"name":"Relative"}',
+      'public/index.html': '<!doctype html><script>fetch("api/ping")</script>',
+      'api/ping.js': 'export default () => ({ json: { pong: true } })',
+    }),
+  );
+
+  const res = await h.fetch(`/a/${app.slug}`, { token: ownerToken, headers: { accept: 'text/html' } });
+  assert.equal(res.status, 302, 'the no-slash form should redirect');
+  assert.equal(res.headers.get('location'), `/a/${app.slug}/`);
+
+  // the query string survives the redirect
+  const q = await h.fetch(`/a/${app.slug}?tab=open`, { token: ownerToken, headers: { accept: 'text/html' } });
+  assert.equal(q.headers.get('location'), `/a/${app.slug}/?tab=open`);
+
+  // and after following it, a relative URL in the page reaches the app's own API
+  const resolved = new URL('api/ping', `${h.base}/a/${app.slug}/`).pathname;
+  assert.equal(resolved, `/a/${app.slug}/api/ping`);
+  const ping = await h.json(resolved, { token: ownerToken });
+  assert.equal(ping.status, 200);
+  assert.deepEqual(ping.body, { pong: true });
+
+  // the URL the platform hands out must actually serve the app to a browser that follows it
+  const followed = await fetch(`${h.base}/a/${app.slug}`, { headers: { authorization: `Bearer ${ownerToken}` } });
+  assert.equal(followed.status, 200);
+  assert.match(await followed.text(), /doctype/i);
+});
