@@ -55,7 +55,7 @@ export function createServices(cfg: Config, mailer?: Mailer): Services {
   const db = openPlatformDb(join(cfg.dataDir, 'platform.db'));
   const apps = new Apps(db, cfg.dataDir, cfg.secret);
   const m = mailer ?? mailerFromEnv(process.env);
-  const auth = new Auth({ db, mailer: m, baseUrl: cfg.baseUrl, allowedEmails: cfg.allowedEmails });
+  const auth = new Auth({ db, mailer: m, baseUrl: cfg.baseUrl, allowedEmails: cfg.allowedEmails, secret: cfg.secret });
   const runtime = new Runtime(apps, { appUid: cfg.appUid, appGid: cfg.appGid });
   return {
     cfg,
@@ -157,14 +157,25 @@ async function serveApp(s: Services, ctx: RequestCtx): Promise<void> {
 
 async function runRoute(s: Services, ctx: RequestCtx, app: AppRecord, apiPath: string): Promise<void> {
   const { req, res, url } = ctx;
-  const seg = apiPath.split('/').filter(Boolean);
+  // Decode per segment, after splitting: decoding first would turn an encoded %2F into a real
+  // separator and invent a path segment. The slug, static paths and query are already decoded,
+  // so an undecoded api path was the odd one out -- ids with spaces or unicode arrived mangled.
+  let seg: string[];
+  try {
+    seg = apiPath
+      .split('/')
+      .filter(Boolean)
+      .map((x) => decodeURIComponent(x));
+  } catch {
+    return sendJson(res, 400, { error: 'bad_path', message: 'the request path is not valid percent-encoding' });
+  }
   const route = seg[0] ?? '';
   const subpath = seg.length > 1 ? '/' + seg.slice(1).join('/') : '';
   const bodyBuf = ['GET', 'HEAD'].includes(ctx.method) ? null : await readBody(req);
 
   const request: RouteRequest = {
     method: ctx.method,
-    path: '/' + apiPath.replace(/^\//, ''),
+    path: '/' + seg.join('/'),
     route,
     subpath,
     query: Object.fromEntries(url.searchParams),
@@ -174,10 +185,45 @@ async function runRoute(s: Services, ctx: RequestCtx, app: AppRecord, apiPath: s
   const wire = { ...request, bodyB64: bodyBuf && bodyBuf.length ? bodyBuf.toString('base64') : null };
 
   const out = await s.runtime.invoke(app.id, wire as RouteRequest, ctx.user, s.apps.env(app.id));
-  const headers: Record<string, string> = { 'cache-control': 'no-store', ...(out.headers ?? {}) };
+  const headers: Record<string, string> = { 'cache-control': 'no-store', ...safeAppHeaders(s, app, out.headers) };
   const body = out.bodyB64 ? Buffer.from(out.bodyB64, 'base64') : Buffer.from(out.body ?? '', 'utf8');
   res.writeHead(out.status ?? 200, { ...headers, 'content-length': body.length });
   res.end(ctx.method === 'HEAD' ? undefined : body);
+}
+
+/**
+ * Response headers an app is allowed to set.
+ *
+ * App code is untrusted, and apps share an origin with the control plane, so a route that
+ * returned `set-cookie: sc_session=...` could overwrite the visitor's platform session with
+ * one the app chose. Everything outside this list is dropped and logged, so an agent can see
+ * why its header did not arrive.
+ */
+const APP_HEADER_ALLOWLIST = new Set([
+  'content-type',
+  'content-disposition',
+  'content-language',
+  'cache-control',
+  'location',
+  'etag',
+  'last-modified',
+  'vary',
+  'refresh',
+  'link',
+]);
+
+function safeAppHeaders(s: Services, app: AppRecord, headers: Record<string, string> | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [rawKey, value] of Object.entries(headers ?? {})) {
+    const key = rawKey.toLowerCase().trim();
+    if (APP_HEADER_ALLOWLIST.has(key) || key.startsWith('x-')) {
+      // A header value may not smuggle a second header or a body.
+      out[key] = String(value).replace(/[\r\n]/g, ' ');
+    } else {
+      s.apps.log(app.id, 'error', `dropped response header "${rawKey}": apps may not set it`);
+    }
+  }
+  return out;
 }
 
 function serveStatic(s: Services, ctx: RequestCtx, app: AppRecord, tail: string): void {
@@ -196,14 +242,31 @@ function serveStatic(s: Services, ctx: RequestCtx, app: AppRecord, tail: string)
   }
 
   const stat = statSync(file);
-  res.writeHead(200, {
-    'content-type': mimeFor(extname(file)),
-    'content-length': stat.size,
-    'cache-control': 'no-cache',
-    'x-content-type-options': 'nosniff',
+  if (ctx.method === 'HEAD') {
+    res.writeHead(200, { 'content-type': mimeFor(extname(file)), 'content-length': stat.size, 'cache-control': 'no-cache' });
+    return void res.end();
+  }
+
+  // The file can disappear between statSync and the stream's open -- a concurrent redeploy
+  // swaps the bundle directory, and DELETE removes it outright. `pipe` only attaches an error
+  // handler to the destination, so an unhandled 'error' here would take down the whole
+  // control plane and every app on it. Open first, then write headers.
+  const stream = createReadStream(file);
+  stream.once('error', (err: NodeJS.ErrnoException) => {
+    s.apps.log(app.id, 'error', `could not read ${tail || 'index.html'}: ${err.code ?? err.message}`);
+    if (res.headersSent) return void res.destroy();
+    notFound(ctx, `this app has no file at /${tail}`);
   });
-  if (ctx.method === 'HEAD') return void res.end();
-  createReadStream(file).pipe(res);
+  stream.once('open', () => {
+    res.writeHead(200, {
+      'content-type': mimeFor(extname(file)),
+      'content-length': stat.size,
+      'cache-control': 'no-cache',
+      'x-content-type-options': 'nosniff',
+    });
+    stream.pipe(res);
+  });
+  res.once('close', () => stream.destroy());
 }
 
 /** Join that refuses to leave the base directory. */

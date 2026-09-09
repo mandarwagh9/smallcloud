@@ -467,3 +467,153 @@ test('static and API rate limits are separate and say what the limit is', async 
 
   await tight.close();
 });
+
+// --- regressions from the multi-agent audit (docs/PLAN.md build log) -------
+
+test('an app cannot set the platform session cookie or other unsafe headers', async () => {
+  const app = await deploy(
+    h,
+    ownerToken,
+    bundle({
+      'app.json': '{"name":"Headers"}',
+      'api/h.js': `export default () => ({
+        headers: {
+          'set-cookie': 'sc_session=attacker; Path=/',
+          'strict-transport-security': 'max-age=0',
+          'content-type': 'text/plain',
+          'x-app-header': 'kept',
+          'cache-control': 'no-store',
+        },
+        body: 'hi',
+      })`,
+    }),
+  );
+  const res = await h.fetch(`/a/${app.slug}/api/h`, { token: ownerToken });
+  assert.equal(res.headers.get('set-cookie'), null, 'an app must never set a cookie on the platform origin');
+  assert.equal(res.headers.get('strict-transport-security'), null, 'an app must not set platform-wide security policy');
+  assert.match(res.headers.get('content-type') ?? '', /text\/plain/, 'allowed headers still work');
+  assert.equal(res.headers.get('x-app-header'), 'kept', 'x- headers are the app’s own namespace');
+
+  // the app is told why, rather than silently losing the header
+  const logs = await h.json(`/v1/apps/${app.id}/logs`, { token: ownerToken });
+  assert.ok(
+    logs.body.logs.some((l: any) => l.msg.includes('set-cookie')),
+    'dropping a header should be visible in the app log',
+  );
+});
+
+test('export contains a database that actually restores', async () => {
+  const app = await deploy(h, ownerToken, todoBundle('Restorable'));
+  for (const text of ['one', 'two', 'three']) {
+    await h.json(`/a/${app.slug}/api/todos`, {
+      method: 'POST',
+      token: ownerToken,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+  }
+  const res = await h.fetch(`/v1/apps/${app.id}/export`, { token: ownerToken });
+  const buf = Buffer.from(await res.arrayBuffer());
+
+  // pull app.db back out of the (stored, uncompressed) zip
+  const sig = Buffer.from([0x50, 0x4b, 0x03, 0x04]);
+  let i = 0;
+  let dbBytes: Buffer | null = null;
+  while ((i = buf.indexOf(sig, i)) >= 0) {
+    const nameLen = buf.readUInt16LE(i + 26);
+    const extraLen = buf.readUInt16LE(i + 28);
+    const size = buf.readUInt32LE(i + 18);
+    const name = buf.subarray(i + 30, i + 30 + nameLen).toString();
+    const start = i + 30 + nameLen + extraLen;
+    if (name.endsWith('app.db')) dbBytes = buf.subarray(start, start + size);
+    i = start + size;
+  }
+  assert.ok(dbBytes, 'the export must contain app.db');
+
+  const { DatabaseSync } = await import('node:sqlite');
+  const { writeFileSync, mkdtempSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const out = join(mkdtempSync(join(tmpdir(), 'sc-restore-')), 'app.db');
+  writeFileSync(out, dbBytes!);
+  const db = new DatabaseSync(out, { readOnly: true });
+  const n = (db.prepare('select count(*) n from todos').get() as { n: number }).n;
+  db.close();
+  // Reading app.db off disk would give 0 rows (or no table at all): WAL holds the recent commits.
+  assert.equal(n, 3, 'the exported database must contain the rows the app actually has');
+});
+
+test('a plain user does not learn who else it is shared with, or the secret names', async () => {
+  const app = await deploy(h, ownerToken, todoBundle('Private Admin'));
+  await h.json(`/v1/apps/${app.id}/secrets`, {
+    method: 'PUT',
+    token: ownerToken,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ key: 'STRIPE_KEY', value: 'sk-x' }),
+  });
+  for (const who of ['reader@else.com', 'editor@else.com']) {
+    await h.json(`/v1/apps/${app.id}/shares`, {
+      method: 'PUT',
+      token: ownerToken,
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ principal: who, role: who.startsWith('editor') ? 'editor' : 'user' }),
+    });
+  }
+
+  const asUser = await h.json(`/v1/apps/${app.id}`, { token: h.tokenFor('reader@else.com') });
+  assert.equal(asUser.status, 200, 'a shared user can still see the app itself');
+  assert.equal(asUser.body.shares, undefined, 'the share list is administration, not app data');
+  assert.equal(asUser.body.secretKeys, undefined, 'secret names hint at what the app integrates with');
+  assert.ok(!JSON.stringify(asUser.body).includes('editor@else.com'), 'other recipients must not be disclosed');
+
+  const asEditor = await h.json(`/v1/apps/${app.id}`, { token: h.tokenFor('editor@else.com') });
+  assert.ok(Array.isArray(asEditor.body.shares), 'an editor manages sharing, so it still sees the list');
+  assert.deepEqual(asEditor.body.secretKeys, ['STRIPE_KEY']);
+});
+
+test('a failed deploy leaves no half-created app behind', async () => {
+  const before = (await h.json('/v1/apps', { token: ownerToken })).body.apps.length;
+  // "public/a" cannot be both a file and a directory
+  const { status, body } = await h.json('/v1/apps', {
+    method: 'POST',
+    token: ownerToken,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      files: [
+        { path: 'app.json', content: '{"name":"Conflicted"}' },
+        { path: 'public/index.html', content: 'x' },
+        { path: 'public/a', content: 'file' },
+        { path: 'public/a/b.html', content: 'directory' },
+      ],
+    }),
+  });
+  assert.equal(status, 400);
+  assert.equal(body.error, 'path_conflict');
+  assert.match(body.message, /both a file and a directory/);
+  const after = (await h.json('/v1/apps', { token: ownerToken })).body.apps;
+  assert.equal(after.length, before, 'a rejected deploy must not leave an app record');
+  assert.ok(!after.some((a: any) => a.name === 'Conflicted'), 'no orphaned row');
+});
+
+test('api route paths are percent-decoded like every other path in a request', async () => {
+  const app = await deploy(
+    h,
+    ownerToken,
+    bundle({
+      'app.json': '{"name":"Decoding"}',
+      'api/echo.js': 'export default (req) => ({ json: { route: req.route, subpath: req.subpath, path: req.path } })',
+    }),
+  );
+  const res = await h.json(`/a/${app.slug}/api/echo/hello%20world/caf%C3%A9`, { token: ownerToken });
+  assert.equal(res.status, 200);
+  assert.equal(res.body.subpath, '/hello world/café', 'segments should arrive decoded');
+  assert.equal(res.body.route, 'echo');
+
+  // an encoded slash must stay inside one segment, not invent a new one
+  const enc = await h.json(`/a/${app.slug}/api/echo/a%2Fb`, { token: ownerToken });
+  assert.equal(enc.body.subpath, '/a/b');
+
+  // malformed encoding is a clean 400, not a crash
+  const bad = await h.fetch(`/a/${app.slug}/api/echo/%ZZ`, { token: ownerToken });
+  assert.equal(bad.status, 400);
+});

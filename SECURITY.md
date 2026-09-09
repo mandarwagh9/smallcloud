@@ -38,6 +38,10 @@ that app's directory:
 | `ctx.files` names cannot traverse | `ctx.files rejects names that traverse` |
 | A route importing `node:sqlite` (or another denied builtin) is rejected at deploy time | `deploying a route that imports a denied builtin is rejected` |
 | An app cannot open the platform database through `node:sqlite` **(Node >= 22.15 only)** | `an app cannot read the platform database through node:sqlite` |
+| An app cannot set cookies or platform-wide security headers on the shared origin | `an app cannot set the platform session cookie or other unsafe headers` |
+| A file vanishing mid-stream cannot kill the control plane | `a file vanishing mid-stream does not take the control plane down` |
+| A filesystem grant does not reach a sibling directory with a longer name | `a filesystem grant does not leak into a sibling directory with a longer name` |
+| The device-login token is never stored in a usable form | `the device-login token is not sitting in the database in cleartext` |
 
 Other controls:
 
@@ -46,7 +50,11 @@ Other controls:
   session cookies, `Secure` when `SC_BASE_URL` is https. API tokens are stored only as a
   SHA-256 hash and are revocable.
 - **Authorization**: one function, `roleFor()`, decides every access. Its full truth table
-  is tested in `test/shares.test.ts`.
+  is tested in `test/shares.test.ts`. Administration detail (who else an app is shared with,
+  which secret keys exist) is returned only to an owner or editor, never to a plain `user`.
+- **App response headers**: an app may set content/caching headers and its own `x-*` headers.
+  Anything else -- `set-cookie` above all, since apps share an origin with the control plane --
+  is dropped and logged to the app.
 - **Secrets**: AES-256-GCM at rest, keyed from `SC_SECRET`; decrypted only when handed to
   an app; never returned by the API.
 - **Rate limits**: sign-in 5/email and 20/IP per 15 min; deploys 30/hour per account; app

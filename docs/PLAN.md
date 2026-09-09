@@ -492,5 +492,28 @@ the test runner*, blocking every later `import('node:...')` in that file. It onl
 Linux, because Node 22.14 on the dev box has no `registerHooks` to install. The tests now detect
 the capability directly and never load the sandbox host into the runner.
 
+## Multi-agent audit (2026-09-09)
+
+Six independent auditors, one per dimension (control plane, runtime, auth/ACL, contract-vs-code,
+docs-vs-code, durability), each finding then attacked by a skeptic that had to trace it from a real
+entry point in the actual code and defaulted to "refuted" when uncertain. 18 agents, 12 findings
+raised, **10 confirmed and 2 refuted**. All 10 are fixed; the two worst I reproduced myself first.
+
+| Severity | Problem | Fix |
+|---|---|---|
+| high | `createReadStream(file).pipe(res)` had no `'error'` listener. A file vanishing between `statSync` and the stream's `open` -- an ordinary concurrent redeploy or delete -- killed **the whole control plane and every app on it**. | Open first, handle `'error'`, then write headers. Regression test runs in a child with `UV_THREADPOOL_SIZE=1`; verified to fail (ENOENT, exit 1) without the fix. |
+| high | An app's response headers were passed through unfiltered, so app code could return `set-cookie: sc_session=...` and overwrite a visitor's platform session on the shared origin. | Allowlist: content/caching headers plus the app's own `x-*`; everything else dropped and logged to the app. |
+| high | Export copied `app.db` off disk. In WAL mode the recent commits -- and on a young app the schema itself -- live in `app.db-wal`, so a restored export had **no rows, or no tables at all**. Verified: `no such table: todos`. | Snapshot with `VACUUM INTO` through the app's own process (the only thing that may write to its data dir), the same technique `backup.sh` uses. |
+| high | `deploy()` committed the apps row before writing the bundle, so a failed write left a record whose URL 500s and whose version was never shipped. | Write the bundle first; on a failed insert remove the directory. Plus a `path_conflict` check so "a file and a directory with the same name" is a clean 400. |
+| high | README documented `cp .env.example .env`, and nothing ever read `.env`. | `--env-file-if-exists=.env` in the `dev` and `start` scripts. |
+| medium | An unexpected child exit left the idle timer armed; when it fired it `stop()`ed whatever healthy replacement had started. | The idle callback checks it is still the current host; the exit handler clears the timer. |
+| medium | `GET /v1/apps/:id` returned the share list and secret key names to anyone with only `user` role. | Administration detail only for owner/editor. |
+| medium | API route paths were never percent-decoded, unlike the slug, static paths and query in the same request. | Decode per segment after splitting (so `%2F` cannot invent a boundary); malformed encoding is a 400. |
+| medium | SECURITY.md claimed API tokens are stored only as a hash, but device-login parked a working token in cleartext. | Encrypted with `SC_SECRET`, swept on expiry. |
+| medium | (same root cause as the deploy ordering row above) | -- |
+
+Refuted and deliberately not acted on: a claimed missing `'error'` listener on the forked child,
+and a claim that the contract's blocked-builtin list is short by 15 modules.
+
 **Still not done**: the rest of M5 -- a public landing/docs site, and the name, license and domain
 decisions, which are Mandar's calls (section 13).

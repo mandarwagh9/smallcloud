@@ -1,3 +1,5 @@
+import { readFileSync, rmSync, existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { SqlError } from './runtime.js';
 import type { Services, RequestCtx } from './server.js';
 import { DeployError } from './apps.js';
@@ -86,7 +88,13 @@ export async function handleApi(s: Services, ctx: RequestCtx): Promise<void> {
   if (path.length === 2) {
     if (method === 'GET') {
       requireUse(s, ctx, app);
-      return sendJson(res, 200, { ...describe(s, app), shares: listShares(s.db, app.id), secretKeys: s.apps.secretKeys(app.id) });
+      // Who else it is shared with, and which secrets exist, are the owner's business.
+      // Someone with only `user` gets the app itself and nothing about its administration.
+      const manages = canManage(roleFor(s.db, app, ctx.user));
+      return sendJson(res, 200, {
+        ...describe(s, app),
+        ...(manages ? { shares: listShares(s.db, app.id), secretKeys: s.apps.secretKeys(app.id) } : {}),
+      });
     }
     if (method === 'DELETE') {
       requireOwner(ctx, app);
@@ -167,7 +175,8 @@ export async function handleApi(s: Services, ctx: RequestCtx): Promise<void> {
 
   if (sub === 'export' && method === 'GET') {
     requireManage(s, ctx, app);
-    const entries = s.apps.exportEntries(app.id).map((e) => ({ path: `${app.slug}${e.path.startsWith('/') ? '' : '/'}${e.path}`, data: e.data }));
+    const raw = await exportEntries(s, app);
+    const entries = raw.map((e) => ({ path: `${app.slug}${e.path.startsWith('/') ? '' : '/'}${e.path}`, data: e.data }));
     const buf = zip(entries);
     res.writeHead(200, {
       'content-type': 'application/zip',
@@ -178,6 +187,37 @@ export async function handleApi(s: Services, ctx: RequestCtx): Promise<void> {
   }
 
   throw new HttpError(404, 'no_such_endpoint', `${ctx.method} ${ctx.url.pathname} is not an endpoint; see GET /v1/contract`);
+}
+
+/**
+ * Everything needed to leave, with a database that actually contains the data.
+ *
+ * Reading app.db off disk is not enough: in WAL mode the newest commits (and, on a young app,
+ * the schema itself) live in app.db-wal, so a raw copy can restore to an empty database. The
+ * snapshot is taken with VACUUM INTO -- the same technique scripts/backup.sh uses -- and it
+ * runs inside the app's own process, because that is the only thing allowed to write into the
+ * app's data directory.
+ */
+async function exportEntries(s: Services, app: AppRecord): Promise<Array<{ path: string; data: Buffer }>> {
+  const entries = s.apps.exportEntries(app.id);
+  const paths = s.apps.paths(app.id);
+  const snapshot = join(paths.data, 'export-snapshot.db');
+  rmSync(snapshot, { force: true }); // VACUUM INTO refuses to overwrite
+
+  let data: Buffer | null = null;
+  try {
+    await s.runtime.sql(app.id, `vacuum into '${snapshot.split("'").join("''")}'`);
+    data = readFileSync(snapshot);
+  } catch (err) {
+    // An app with no bundle cannot be started, so fall back to whatever is on disk rather
+    // than failing the export outright. Say so in the log; a stale copy is worth flagging.
+    s.apps.log(app.id, 'error', `export could not snapshot the database (${(err as Error).message}); falling back to the raw file`);
+    if (existsSync(paths.db)) data = readFileSync(paths.db);
+  } finally {
+    rmSync(snapshot, { force: true });
+  }
+  if (data) entries.push({ path: 'app.db', data });
+  return entries;
 }
 
 function describe(s: Services, app: AppRecord) {
