@@ -4,3 +4,6 @@ data/
 .env
 *.log
 .smallcloud.json
+.ex/
+.smoke/
+.coldagent.log
