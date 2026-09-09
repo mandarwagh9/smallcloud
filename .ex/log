@@ -1,0 +1,19 @@
+smallcloud listening on http://127.0.0.1:8801
+  data: C:\Users\Mandar\Desktop\smallcloud\.ex\data
+  mail: no RESEND_API_KEY, sign-in links are printed here and shown in the browser
+
+[mail] to alice@example.com: Your smallcloud sign-in link
+Open this link to sign in (valid 15 minutes):
+
+http://127.0.0.1:8801/auth/268763971f00c4e16df162d36af7d066c2e2838360c2540aac846adcda887a45
+
+If you did not ask for this, ignore it.
+
+
+[mail] to alice@example.com: Your smallcloud sign-in link
+Open this link to sign in (valid 15 minutes):
+
+http://127.0.0.1:8801/auth/813f8f88bf3e09fa113bae61b5e42f4906517030c1efe9e21b2e47c51b495d52
+
+If you did not ask for this, ignore it.
+

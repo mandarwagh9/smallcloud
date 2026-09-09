@@ -49,8 +49,11 @@ Other controls:
   is tested in `test/shares.test.ts`.
 - **Secrets**: AES-256-GCM at rest, keyed from `SC_SECRET`; decrypted only when handed to
   an app; never returned by the API.
-- **Rate limits**: sign-in 5/email and 20/IP per 15 min; deploys 30/hour per account;
-  app requests 300/min per IP.
+- **Rate limits**: sign-in 5/email and 20/IP per 15 min; deploys 30/hour per account; app
+  requests per app per client IP, 3000/min static and 1200/min API (`SC_STATIC_RPM`,
+  `SC_API_RPM`). Those match the measured capacity in RUNBOOK.md deliberately -- a limit
+  below what the box can serve rejects legitimate traffic, which is what the first load run
+  did.
 - **CSRF**: form posts are same-origin checked and cookies are SameSite=Lax.
 
 ## The `node:sqlite` gap (read this before opening an instance)

@@ -94,6 +94,8 @@ async function runOnce(runIndex) {
       secret: 'cold-agent-eval-secret',
       allowedEmails: [],
       trustProxy: false,
+    staticRpm: 100000,
+    apiRpm: 100000,
     },
     consoleMailer(() => {}),
   );

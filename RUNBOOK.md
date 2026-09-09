@@ -36,6 +36,8 @@ npx smallcloud mcp-install
 | `SC_ALLOWED_EMAILS` | no | Comma-separated allowlist. Empty means anyone may sign in. |
 | `SC_TRUST_PROXY` | no | Set to `1` behind a reverse proxy so rate limits see real IPs. |
 | `SC_APP_UID` / `SC_APP_GID` | recommended | POSIX only. Run app processes as this user so the OS enforces isolation. The Docker image sets both to 10001. See SECURITY.md. |
+| `SC_STATIC_RPM` | no | Static requests per minute, per app, per client IP. Default 3000 (50 rps). |
+| `SC_API_RPM` | no | API requests per minute, per app, per client IP. Default 1200 (20 rps). |
 
 **Node version matters for isolation.** Run Node >= 22.15: older versions lack
 `module.registerHooks`, so apps can load `node:sqlite` and read `platform.db` directly.
@@ -120,6 +122,30 @@ manage page. Everything else (apps, data, shares) is unaffected.
 
 ## Capacity
 
-A 1 vCPU / 1 GB VPS comfortably runs a few dozen small apps for a few dozen people. Each
+Measured 2026-09-09 on the production image, server pinned to **1 vCPU / 1 GB**, load driven
+from a separate container over a Docker network (`scripts/loadtest.mjs`, 20s per phase):
+
+| Phase | Rate | p50 | p95 | max | Errors |
+|---|---|---|---|---|---|
+| Static (`GET /a/todo/`) | 50 rps | 3.6 ms | 4.6 ms | 7.8 ms | 0 |
+| API read (`GET api/todos`) | 20 rps | 4.1 ms | 4.9 ms | 7.7 ms | 0 |
+| API write (`POST api/todos`) | 20 rps | 13.1 ms | 16.5 ms | 23.9 ms | 0 |
+
+Cold start (first request after a redeploy, including spawning the app process): **57 ms**.
+No process leak: one app process running afterwards, server healthy.
+
+Reproduce it yourself:
+
+```bash
+node scripts/loadtest.mjs https://cloud.example.com <token> <slug> --seconds 20
+```
+
+Writes cost about 3x a read because each one is a SQLite commit in the app's own database.
+That is the expected shape; if reads get slow instead, something else is wrong.
+
+A 1 vCPU / 1 GB box comfortably runs a few dozen small apps for a few dozen people. Each
 *active* app holds a process with up to 128 MB of heap; idle apps hold nothing. If you
 expect more than about ten apps busy at once, give the box more memory.
+
+The default rate limits (`SC_STATIC_RPM`, `SC_API_RPM`) are set to exactly the throughput
+above, per app per client IP. Raise them if a whole office shares one address and hits 429s.

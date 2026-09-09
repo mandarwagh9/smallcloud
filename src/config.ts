@@ -10,6 +10,9 @@ export interface Config {
   /** POSIX only. Run app processes as this user so the OS, not Node, enforces isolation. */
   appUid?: number;
   appGid?: number;
+  /** Per app, per IP, per minute. Defaults match the capacity targets in docs/PLAN.md NF2. */
+  staticRpm: number;
+  apiRpm: number;
 }
 
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
@@ -30,5 +33,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
     trustProxy: env.SC_TRUST_PROXY === '1' || env.SC_TRUST_PROXY === 'true',
     appUid: env.SC_APP_UID ? Number(env.SC_APP_UID) : undefined,
     appGid: env.SC_APP_GID ? Number(env.SC_APP_GID) : undefined,
+    staticRpm: Number(env.SC_STATIC_RPM || 3000),
+    apiRpm: Number(env.SC_API_RPM || 1200),
   };
 }
