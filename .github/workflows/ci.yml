@@ -44,11 +44,15 @@ jobs:
       - name: Production image builds and boots
         run: |
           docker build -t smallcloud-prod .
-          docker run -d --name sc-ci -e SC_BASE_URL=http://127.0.0.1:8787 -e SC_SECRET=ci-secret smallcloud-prod
+          # NODE_ENV=production in the image, so serve refuses to boot without a mail provider
+          # (see the round-three guard). Pass a dummy key the way a real operator would.
+          docker run -d --name sc-ci -e SC_BASE_URL=http://127.0.0.1:8787 -e SC_SECRET=ci-secret -e RESEND_API_KEY=ci-dummy smallcloud-prod
+          up=""
           for i in $(seq 1 30); do
-            docker exec sc-ci node -e "fetch('http://127.0.0.1:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))" && break
+            if docker exec sc-ci node -e "fetch('http://127.0.0.1:8787/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"; then up=1; break; fi
             sleep 2
           done
+          if [ -z "$up" ]; then echo "FAIL: production container did not become healthy"; docker logs sc-ci; exit 1; fi
           echo "--- the app user must not be able to read the platform database ---"
           docker cp scripts/kernel-probe.cjs sc-ci:/tmp/probe.cjs
           out=$(docker exec sc-ci sh -lc 'su -s /bin/sh scapp -c "node --no-warnings /tmp/probe.cjs /data/platform.db"')
