@@ -337,7 +337,7 @@ export function renderManage(
     ? shares
         .map(
           (sh) => `<tr>
-  <td class="who">${escapeHtml(sh.principal)}</td>
+  <td class="who">${escapeHtml(sh.principal.startsWith('user:') ? sh.principal.slice(5) : sh.principal)}</td>
   <td>${escapeHtml(sh.role)}</td>
   <td class="actions"><form method="post" action="/apps/${escapeHtml(app.id)}/unshare" style="display:inline">
     <input type="hidden" name="principal" value="${escapeHtml(sh.principal)}">
