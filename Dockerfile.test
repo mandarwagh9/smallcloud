@@ -13,5 +13,6 @@ COPY src ./src
 COPY test ./test
 COPY scripts ./scripts
 COPY examples ./examples
+COPY AGENTS.md ./AGENTS.md
 
 CMD ["sh", "-lc", "node -e \"console.log('node', process.version, '| registerHooks:', typeof require('node:module').registerHooks)\" && npm test && node --no-warnings=ExperimentalWarning --import tsx scripts/verify-uid-isolation.mjs"]
