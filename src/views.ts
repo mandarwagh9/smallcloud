@@ -205,6 +205,13 @@ footer a { color: var(--ink-2); }
   h1.hero { font-size: 46px; }
   .grid2 { grid-template-columns: 1fr; gap: 22px; }
   p.lede { font-size: 17px; }
+  .urlbox a { overflow-wrap: anywhere; }
+}
+/* On a phone the app-list row can't hold name, slug and the status group on one
+   line, so let the status group (tag, version, manage) drop beneath the name. */
+@media (max-width: 480px) {
+  ul.apps li { flex-wrap: wrap; row-gap: 8px; }
+  ul.apps .right { margin-left: 0; width: 100%; }
 }
 `;
 
