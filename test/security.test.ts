@@ -32,6 +32,12 @@ before(async () => {
 });
 after(() => h.close());
 
+/** Like probe() but returns just {status, body}; a thin alias for readability. */
+async function probeRoute(name: string, routeBody: string): Promise<{ status: number; body: any }> {
+  const r = await probe(name, routeBody);
+  return { status: r.status, body: r.body };
+}
+
 /** Deploy a one-route app whose route returns JSON, and call it. */
 async function probe(name: string, routeBody: string): Promise<any> {
   const app = await deploy(
@@ -378,4 +384,73 @@ test('the rate limiter map stays bounded under many distinct keys', () => {
   assert.equal(fresh.take('a'), true);
   assert.equal(fresh.take('a'), true);
   assert.equal(fresh.take('a'), false);
+});
+
+// Round three found the isolation test only tried a dynamic import, while ATTACH through the
+// already-open ctx.db handle read the whole platform database -- full account takeover. These
+// probe every SQL path an app or editor can reach, and they FAIL without the boundary guard.
+test('app SQL cannot ATTACH, DETACH or VACUUM out of its own database', async () => {
+  const other = await deploy(h, token, bundle({ 'app.json': '{"name":"other-db"}', 'api/x.js': 'export default () => ({ json: {} })' }));
+  const otherDb = h.services.apps.paths(other.id).db.replaceAll(String.fromCharCode(92), '/');
+  const platformDb = join(h.services.cfg.dataDir, 'platform.db').replaceAll(String.fromCharCode(92), '/');
+
+  const probe = (target: string, verb: string) =>
+    probeRoute(
+      `attack-${verb}`,
+      `try {
+        ctx.db.exec(${JSON.stringify(verb === 'attach' ? `ATTACH DATABASE '${target}' AS p` : verb === 'vacuum' ? `VACUUM INTO '${target}'` : `DETACH DATABASE p`)});
+        return { json: { result: 'ALLOWED' } };
+      } catch (e) { return { json: { result: 'blocked', message: e.message } }; }`,
+    );
+
+  for (const [target, verb] of [
+    [platformDb, 'attach'],
+    [otherDb, 'attach'],
+    [platformDb + '.copy', 'vacuum'],
+  ] as const) {
+    const { body } = await probe(target, verb);
+    assert.equal(body.result, 'blocked', `${verb} to ${target} was allowed`);
+    assert.match(body.message, /ATTACH, DETACH and VACUUM/);
+  }
+
+  // and it is enforced on the editor SQL endpoint too, not only ctx.db
+  const viaApi = await h.json(`/v1/apps/${other.id}/db`, {
+    method: 'POST',
+    token,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ sql: `attach database '${platformDb}' as p` }),
+  });
+  assert.equal(viaApi.status, 400, 'ATTACH via /v1/apps/:id/db must be refused');
+
+  // normal single-database SQL is unaffected
+  const ok = await probeRoute('normal-sql', `ctx.db.exec('create table if not exists t(x)'); ctx.db.run('insert into t values (1)'); return { json: ctx.db.all('select x from t') };`);
+  assert.deepEqual(ok.body, [{ x: 1 }]);
+});
+
+test('static serving refuses paths that resolve outside public/ (checked against files that exist)', async () => {
+  const app = await deploy(h, token, bundle({ 'app.json': '{"name":"static-guard"}', 'public/index.html': 'root' }));
+  // Encoded so client-side normalisation cannot collapse them; each names a real file that
+  // exists outside public/ (bundle/app.json, the app db, the platform db), so if safeJoin were
+  // removed these would 200 -- the point the old test missed.
+  for (const attempt of ['..%2fapp.json', '..%2f..%2fdata%2fapp.db', '..%2f..%2f..%2f..%2fplatform.db', '..%5c..%5cplatform.db']) {
+    const res = await h.fetch(`/a/${app.slug}/${attempt}`, { token });
+    assert.ok(res.status === 404 || res.status === 400, `${attempt} returned ${res.status}`);
+    const body = await res.text();
+    assert.ok(!body.startsWith('SQLite format'), `${attempt} leaked a database`);
+    assert.ok(!body.includes('static-guard'), `${attempt} leaked the manifest`);
+  }
+});
+
+test('the rate limiter never forgives a key that is already at its limit', () => {
+  const limiter = new RateLimiter(3, 60_000);
+  // block one key
+  assert.equal(limiter.take('victim'), true);
+  assert.equal(limiter.take('victim'), true);
+  assert.equal(limiter.take('victim'), true);
+  assert.equal(limiter.take('victim'), false, 'victim should now be blocked');
+  // flood far past the cap with distinct keys, trying to evict the blocked one
+  for (let i = 0; i < 20_000; i++) limiter.take(`flood-${i}`);
+  assert.ok(limiter.size() <= 5000, `limiter grew to ${limiter.size()}`);
+  // the blocked key must still be blocked -- eviction must not have reset it
+  assert.equal(limiter.take('victim'), false, 'a blocked key was forgiven by eviction (limit bypass)');
 });

@@ -128,15 +128,23 @@ async function login(s: Services, ctx: RequestCtx): Promise<void> {
   if (!s.limiters.loginIp.take(ctx.ip) || !s.limiters.login.take(email.toLowerCase())) {
     return sendHtml(ctx.res, 429, renderLogin(next, 'Too many sign-in attempts. Wait a few minutes and try again.'));
   }
+  let link: string;
   try {
-    const link = await s.auth.requestMagicLink(email, next);
-    // With no email provider configured the link cannot be delivered, so show it on the page.
-    const isDevMailer = !process.env.RESEND_API_KEY;
-    return sendHtml(ctx.res, 200, renderCheckEmail(email, isDevMailer ? link : undefined));
+    link = await s.auth.requestMagicLink(email, next);
   } catch (err) {
     if (err instanceof AuthError) return sendHtml(ctx.res, 400, renderLogin(next, err.message));
-    throw err;
+    // A provider outage should read as a retryable failure, not a raw 500, and it should not
+    // burn one of the five attempts against an email the person never actually got a link for.
+    // requestMagicLink has already written the magic_links row; leave it (it simply expires).
+    // Refund only the per-email counter; the per-IP one is a coarser abuse guard, leave it be.
+    s.limiters.login.refund(email.toLowerCase());
+    // eslint-disable-next-line no-console
+    console.error('[smallcloud] magic-link send failed:', (err as Error).message);
+    return sendHtml(ctx.res, 503, renderLogin(next, 'We could not send the email right now. Please try again in a moment.'));
   }
+  // Only ever revealed on a local dev instance (see Services.revealMagicLink). A production
+  // instance without a mail provider shows the check-your-email page but not the link.
+  return sendHtml(ctx.res, 200, renderCheckEmail(email, s.revealMagicLink ? link : undefined));
 }
 
 /** Reads an application/x-www-form-urlencoded body. Rejects cross-origin form posts. */

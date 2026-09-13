@@ -620,3 +620,47 @@ test('api route paths are percent-decoded like every other path in a request', a
   const bad = await h.fetch(`/a/${app.slug}/api/echo/%ZZ`, { token: ownerToken });
   assert.equal(bad.status, 400);
 });
+
+// Round three: a production instance with no mail provider was showing the sign-in link on the
+// page, so anyone who typed your email could sign in as you.
+test('the sign-in link is shown only on a local dev instance', async () => {
+  const { createServices } = await import('../src/server.js');
+  const { consoleMailer } = await import('../src/email.js');
+  const { mkdtempSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const base = { allowedEmails: [], trustProxy: false, staticRpm: 1e6, apiRpm: 1e6, secret: 's', port: 0 };
+
+  const local = createServices({ ...base, dataDir: mkdtempSync(join(tmpdir(), 'sc-r-')), baseUrl: 'http://localhost:8787' }, consoleMailer(() => {}));
+  assert.equal(local.revealMagicLink, true, 'a local instance with no mailer may show the link');
+  local.db.close();
+
+  const remote = createServices({ ...base, dataDir: mkdtempSync(join(tmpdir(), 'sc-r-')), baseUrl: 'https://cloud.example.com' }, consoleMailer(() => {}));
+  assert.equal(remote.revealMagicLink, false, 'a remote instance must never show the link');
+  remote.db.close();
+});
+
+test('a mail-send failure returns a retryable error and does not burn the attempt', async () => {
+  const failing = { async send() { throw new Error('provider down'); } };
+  const bad = await startHarness({}, failing);
+  try {
+    const post = () =>
+      bad.fetch('/login', {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ email: 'x@y.com', next: '/me' }).toString(),
+      });
+    const first = await post();
+    assert.equal(first.status, 503, 'a provider outage should be a retryable 503, not a 500');
+    assert.match(await first.text(), /try again/i);
+
+    // the five-per-email budget must not have been spent: a fresh limiter allows 5, so after one
+    // failed send at least four attempts remain (we do not get a 429 immediately).
+    for (let i = 0; i < 4; i++) {
+      const r = await post();
+      assert.notEqual(r.status, 429, `attempt ${i + 2} was rate-limited; the failed send was counted`);
+    }
+  } finally {
+    await bad.close();
+  }
+});

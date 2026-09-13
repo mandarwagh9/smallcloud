@@ -181,6 +181,11 @@ export async function main(argv: string[]): Promise<number> {
 
 async function serve(): Promise<number> {
   const cfg = configFromEnv();
+  if (process.env.NODE_ENV === 'production' && !process.env.RESEND_API_KEY) {
+    throw new Error(
+      'RESEND_API_KEY is required in production: without it, sign-in links cannot be emailed and nobody could sign in. Set it, or run a local dev instance.',
+    );
+  }
   const services = createServices(cfg);
   const server = createHttpServer(services);
   await new Promise<void>((r) => server.listen(cfg.port, r));

@@ -148,15 +148,29 @@ export class RateLimiter {
     return this.hits.size;
   }
 
+  /** Give back one counted request for a key -- used when an action failed before it took effect. */
+  refund(key: string): void {
+    const cur = this.hits.get(key);
+    if (cur && cur.n > 0) cur.n--;
+  }
+
   private evict(t: number): void {
     for (const [k, v] of this.hits) if (v.resetAt <= t) this.hits.delete(k);
     if (this.hits.size < MAX_TRACKED_KEYS) return;
-    // Still full of live windows: drop the oldest tenth. Map preserves insertion order, so
-    // the first keys are the ones whose windows started earliest.
+    // Still full of live windows: drop the oldest that are NOT already blocked. Evicting a
+    // counter forgives it -- the key starts a fresh window on its next request -- so evicting
+    // one that has hit its limit would let an attacker bypass the sign-in limit just by
+    // flooding other keys until the blocked one is pushed out. A key below its limit has at
+    // most `limit-1` requests to forgive, which is harmless. If every entry is at its limit
+    // (an active flood), we add none and let them expire; the map is bounded by that flood's
+    // size, all of it short-lived.
     let drop = Math.ceil(MAX_TRACKED_KEYS / 10);
-    for (const k of this.hits.keys()) {
-      if (drop-- <= 0) break;
-      this.hits.delete(k);
+    for (const [k, v] of this.hits) {
+      if (drop <= 0) break;
+      if (v.n < this.limit) {
+        this.hits.delete(k);
+        drop--;
+      }
     }
   }
 }

@@ -38,6 +38,8 @@ that app's directory:
 | `ctx.files` names cannot traverse | `ctx.files rejects names that traverse` |
 | A route importing `node:sqlite` (or another denied builtin) is rejected at deploy time | `deploying a route that imports a denied builtin is rejected` |
 | An app cannot open the platform database through `node:sqlite` **(Node >= 22.15 only)** | `an app cannot read the platform database through node:sqlite` |
+| App/editor SQL cannot ATTACH, DETACH or VACUUM out of the app's own database | `app SQL cannot ATTACH, DETACH or VACUUM out of its own database` |
+| A sign-in link is shown on the page only on a local dev instance | `the sign-in link is shown only on a local dev instance` |
 | An app cannot set cookies or platform-wide security headers on the shared origin | `an app cannot set the platform session cookie or other unsafe headers` |
 | A file vanishing mid-stream cannot kill the control plane | `a file vanishing mid-stream does not take the control plane down` |
 | A filesystem grant does not reach a sibling directory with a longer name | `a filesystem grant does not leak into a sibling directory with a longer name` |
@@ -79,6 +81,13 @@ Three layers address it. Know which ones you have:
 | Deploy-time guardrail | any route whose source references a denied builtin | always |
 | Load-time block (`module.registerHooks`) | the same imports built at runtime, e.g. `import('node:'+'sqlite')` | **Node >= 22.15** |
 | OS user separation (`SC_APP_UID`) | all of it, at the kernel, whatever Node does | POSIX, when configured; **on by default in the Docker image** |
+
+There is a second face to the same gap: even with the module blocked, SQLite's own `ATTACH`,
+`DETACH` and `VACUUM INTO` statements reach other database files through the already-open
+`ctx.db` handle. Those statements are now refused in the app host (for both `ctx.db` and the
+editor SQL endpoint), so an app cannot `ATTACH '<dataDir>/platform.db'` to read every session
+and token. `node:sqlite` exposes no authorizer, so this is a statement filter over the SQL
+text; `SC_APP_UID` remains the OS-level backstop that does not depend on it.
 
 The deploy-time guardrail is a guardrail, not a boundary: it is string matching and can be
 evaded by an author who wants to. On Node < 22.15 with no `SC_APP_UID`, treat anyone who can
@@ -122,6 +131,14 @@ Be honest with yourself about these before you open an instance up.
    can slow down the box in the meantime. There is no per-app CPU quota.
 7. **Email deliverability as an auth control.** Anyone who can read a recipient's inbox can
    sign in as them. Use `SC_ALLOWED_EMAILS` on private instances.
+
+## Export size and format limits
+
+The export endpoint (`GET /v1/apps/:id/export`) builds the zip in memory, so it is capped at
+200 MB per app; a larger app must leave via `scripts/backup.sh`, which streams to `tar`. The
+zip writer is store-method and not zip64, so an archive with more than ~65,000 entries (only
+reachable with that many uploaded files) is not supported through the endpoint -- again,
+`backup.sh` is the path for that. Streaming zip64 export is a planned follow-up.
 
 ## Swapping the boundary
 

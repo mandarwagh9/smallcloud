@@ -63,10 +63,15 @@ export class Runtime {
    * to the app's own directory. Running them in the control plane would hand an editor the
    * platform's filesystem access.
    */
-  async sql(appId: string, sql: string, params: unknown[] = []): Promise<{ rows?: unknown[]; changes?: number }> {
+  async sql(
+    appId: string,
+    sql: string,
+    params: unknown[] = [],
+    opts: { internal?: boolean } = {},
+  ): Promise<{ rows?: unknown[]; changes?: number }> {
     const out = await this.send<{ ok: boolean; result?: { rows?: unknown[]; changes?: number }; message?: string; timedOut?: boolean }>(
       appId,
-      (invokeId) => ({ t: 'sql', invokeId, sql, params }),
+      (invokeId) => ({ t: 'sql', invokeId, sql, params, internal: opts.internal === true }),
       () => ({ ok: false, message: `the query took longer than ${REQUEST_TIMEOUT_MS / 1000}s`, timedOut: true }),
     );
     if (!out.ok) throw new SqlError(out.message ?? 'query failed');

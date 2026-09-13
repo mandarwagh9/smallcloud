@@ -208,7 +208,7 @@ async function exportEntries(s: Services, app: AppRecord): Promise<Array<{ path:
 
   let data: Buffer | null = null;
   try {
-    await s.runtime.sql(app.id, `vacuum into '${snapshot.split("'").join("''")}'`);
+    await s.runtime.sql(app.id, `vacuum into '${snapshot.split("'").join("''")}'`, [], { internal: true });
     data = readFileSync(snapshot);
   } catch (err) {
     // An app that has never been deployed has no process to snapshot through; that is the
@@ -227,6 +227,18 @@ async function exportEntries(s: Services, app: AppRecord): Promise<Array<{ path:
     }
   }
   if (data) entries.push({ path: 'app.db', data });
+
+  // The zip is built in memory, so a very large app could exhaust the control plane. Small
+  // software stays small; a large app should leave via scripts/backup.sh, which streams to tar.
+  const total = entries.reduce((n, e) => n + e.data.length, 0);
+  const EXPORT_MAX_BYTES = 200 * 1024 * 1024;
+  if (total > EXPORT_MAX_BYTES) {
+    throw new HttpError(
+      413,
+      'export_too_large',
+      `this app is ${Math.round(total / 1024 / 1024)} MB, over the ${EXPORT_MAX_BYTES / 1024 / 1024} MB limit for the export endpoint; use scripts/backup.sh to archive the data directory instead`,
+    );
+  }
   return entries;
 }
 

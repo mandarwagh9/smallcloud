@@ -68,20 +68,90 @@ function num(v) {
   return typeof v === 'bigint' ? Number(v) : v;
 }
 
+// ---- SQL boundary guard ---------------------------------------------------
+
+/**
+ * ATTACH/DETACH reach another database file and VACUUM INTO writes one, so any of them lets a
+ * statement escape the app's own database -- e.g. `ATTACH '<dataDir>/platform.db'` reads every
+ * session and token on the instance. Node's permission model does not gate SQLite's own file
+ * access (the same root cause as the node:sqlite import block), and node:sqlite exposes no
+ * authorizer, so the only in-process control is to refuse these statements before they run.
+ * SC_APP_UID remains the OS-level backstop; this closes the hole on installs without it.
+ *
+ * The text is stripped of comments, string literals and quoted identifiers first, so a keyword
+ * that is really data or a column name does not trip it, and a real statement keyword -- which
+ * SQLite cannot see obfuscated either -- always does.
+ */
+function crossesDatabaseBoundary(sql) {
+  // Scan character by character rather than with a regex: skip string literals, quoted and
+  // bracketed identifiers, and comments so a keyword that is really data or a name is ignored,
+  // then flag ATTACH / DETACH / VACUUM appearing as bare keywords. A real statement keyword is
+  // never inside quotes, and SQLite keywords cannot be split, so this sees what SQLite would run.
+  const NL = String.fromCharCode(10);
+  const text = String(sql);
+  let code = "";
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    const d = text[i + 1];
+    if (c === "'" || c === "\"" || c === "`") {
+      const q = c;
+      i++;
+      while (i < text.length) {
+        if (text[i] === q) {
+          if (text[i + 1] === q) { i++; } else { break; }
+        }
+        i++;
+      }
+      code += " ";
+      continue;
+    }
+    if (c === "[") {
+      while (i < text.length && text[i] !== "]") i++;
+      code += " ";
+      continue;
+    }
+    if (c === "-" && d === "-") {
+      while (i < text.length && text[i] !== NL) i++;
+      code += " ";
+      continue;
+    }
+    if (c === "/" && d === "*") {
+      i += 2;
+      while (i < text.length && !(text[i] === "*" && text[i + 1] === "/")) i++;
+      i++;
+      code += " ";
+      continue;
+    }
+    code += c;
+  }
+  const words = code.toLowerCase().split(/[^a-z]+/);
+  return words.includes("attach") || words.includes("detach") || words.includes("vacuum");
+}
+
+function assertOwnDatabase(sql) {
+  if (crossesDatabaseBoundary(sql)) {
+    throw new Error("ctx.db can only touch this app database; ATTACH, DETACH and VACUUM are not allowed");
+  }
+}
+
 // ---- ctx.db ---------------------------------------------------------------
 
 const appDb = {
   run(sql, ...params) {
+    assertOwnDatabase(sql);
     const r = getDb().prepare(sql).run(...params);
     return { changes: num(r.changes), lastInsertRowid: num(r.lastInsertRowid) };
   },
   get(sql, ...params) {
+    assertOwnDatabase(sql);
     return getDb().prepare(sql).get(...params);
   },
   all(sql, ...params) {
+    assertOwnDatabase(sql);
     return getDb().prepare(sql).all(...params);
   },
   exec(sql) {
+    assertOwnDatabase(sql);
     getDb().exec(sql);
   },
 };
@@ -153,18 +223,18 @@ const SAFE_ROUTE = /^[A-Za-z0-9._-]*$/;
 async function loadRoute(route) {
   if (moduleCache.has(route)) return moduleCache.get(route);
   // Defence in depth: the control plane already rejects separators and traversal in a path
-  // segment, but this is the sink that turns a route into a filename and then imports it, so
-  // it refuses anything that is not a plain name and re-checks containment after resolving.
-  if (!SAFE_ROUTE.test(route) || route === '.' || route === '..') {
-    moduleCache.set(route, null);
-    return null;
-  }
+  // segment, and this is the sink that turns a route into a filename. A route that is not a
+  // plain safe name is never used to build a filename -- but it must still fall through to the
+  // api/index.js catch-all rather than 404 early, so a catch-all router sees every request.
+  const named = route && SAFE_ROUTE.test(route) && route !== '.' && route !== '..' && !route.startsWith('_');
   let file = null;
-  for (const ext of ['.js', '.mjs']) {
-    const candidate = join(BUNDLE, 'api', route + ext);
-    if (route && !route.startsWith('_') && existsSync(candidate)) {
-      file = candidate;
-      break;
+  if (named) {
+    for (const ext of ['.js', '.mjs']) {
+      const candidate = join(BUNDLE, 'api', route + ext);
+      if (existsSync(candidate)) {
+        file = candidate;
+        break;
+      }
     }
   }
   if (!file) {
@@ -301,6 +371,10 @@ function inspectish(v) {
  */
 function runSql(m) {
   try {
+    // Editor-supplied SQL (POST /v1/apps/:id/db) is untrusted the same way app code is, so it
+    // gets the same guard. The platform's own export snapshot sets m.internal to run its
+    // controlled VACUUM INTO into the app's own data dir.
+    if (!m.internal) assertOwnDatabase(m.sql);
     const isRead = /^\s*(select|pragma|with|explain)/i.test(m.sql);
     const stmt = getDb().prepare(m.sql);
     const params = m.params ?? [];

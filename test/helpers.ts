@@ -19,9 +19,9 @@ export interface Harness {
 }
 
 /** A real server on a random port with its own temp data dir. */
-export async function startHarness(env: Partial<Record<string, string>> = {}): Promise<Harness> {
+export async function startHarness(env: Partial<Record<string, string>> = {}, mailer?: import('../src/email.js').Mailer): Promise<Harness> {
   const dataDir = mkdtempSync(join(tmpdir(), 'smallcloud-test-'));
-  const mail = consoleMailer(() => {});
+  const mail = (mailer as ReturnType<typeof consoleMailer>) ?? consoleMailer(() => {});
   const cfg = {
     dataDir,
     baseUrl: 'http://127.0.0.1:0',
