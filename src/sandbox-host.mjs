@@ -371,10 +371,11 @@ function inspectish(v) {
  */
 function runSql(m) {
   try {
-    // Editor-supplied SQL (POST /v1/apps/:id/db) is untrusted the same way app code is, so it
-    // gets the same guard. The platform's own export snapshot sets m.internal to run its
-    // controlled VACUUM INTO into the app's own data dir.
-    if (!m.internal) assertOwnDatabase(m.sql);
+    // Always guarded. There is deliberately no caller-supplied bypass flag here: app code shares
+    // this process and can forge an IPC message with process.emit("message", ...), so any
+    // "internal" flag on the message would be attacker-controlled. The export snapshot has its
+    // own message type (runSnapshot) whose SQL the host constructs itself.
+    assertOwnDatabase(m.sql);
     const isRead = /^\s*(select|pragma|with|explain)/i.test(m.sql);
     const stmt = getDb().prepare(m.sql);
     const params = m.params ?? [];
@@ -386,9 +387,27 @@ function runSql(m) {
   }
 }
 
+/**
+ * Snapshot the app's own database to a plain filename in its data directory. The SQL is built
+ * here from a validated filename, never taken from the message, so even a forged snapshot
+ * message can only vacuum this app's db into its own data dir -- which app code can already
+ * write. This is how the platform's export takes a WAL-consistent copy.
+ */
+function runSnapshot(m) {
+  try {
+    const name = safeName(m.dest);
+    const full = join(FILES_DIR, '..', name); // FILES_DIR is data/files, so this is data/<name>
+    getDb().exec("vacuum into '" + full.split("'").join("''") + "'");
+    return { t: 'sql-result', invokeId: m.invokeId, ok: true, result: { snapshot: name } };
+  } catch (err) {
+    return { t: 'sql-result', invokeId: m.invokeId, ok: false, message: err && err.message ? err.message : String(err) };
+  }
+}
+
 process.on('message', (m) => {
   if (!m) return;
   if (m.t === 'sql') return send(runSql(m));
+  if (m.t === 'snapshot') return send(runSnapshot(m));
   if (m.t !== 'invoke') return;
   invoke(m).then(send, (err) => {
     send({

@@ -66,7 +66,9 @@ export class Apps {
       if (!f || typeof f.path !== 'string' || typeof f.content !== 'string') throw new DeployError('bad_file', 'each file needs a string path and string content');
       const p = normalizePath(f.path);
       if (!p) throw new DeployError('bad_path', `"${f.path}" is not a safe relative path`);
-      if (seen.has(p)) throw new DeployError('dup_path', `"${p}" appears twice`);
+      // Compare case-insensitively: on a case-insensitive filesystem (macOS default, Windows)
+      // "Public/x" and "public/x" are the same file, and writing both would silently drop one.
+      if (seen.has(p.toLowerCase())) throw new DeployError('dup_path', `"${p}" collides with another file (paths are compared case-insensitively)`);
       const ok = p === 'app.json' || p === 'README.md' || p.startsWith('public/') || p.startsWith('api/');
       if (!ok) throw new DeployError('bad_path', `"${p}" is outside app.json, public/ or api/`);
       if (p.startsWith('api/')) {
@@ -84,7 +86,7 @@ export class Apps {
       const bytes = f.encoding === 'base64' ? Buffer.byteLength(f.content, 'base64') : Buffer.byteLength(f.content, 'utf8');
       total += bytes;
       if (total > MAX_BUNDLE_BYTES) throw new DeployError('too_big', `bundle exceeds ${MAX_BUNDLE_BYTES} bytes`);
-      seen.add(p);
+      seen.add(p.toLowerCase());
       out.push({ path: p, content: f.content, encoding: f.encoding === 'base64' ? 'base64' : 'utf8' });
     }
     // "public/a" as a file and "public/a/b.html" as a file cannot both exist on a filesystem.
@@ -94,7 +96,7 @@ export class Apps {
       const parts = p.split('/');
       for (let i = 1; i < parts.length; i++) {
         const ancestor = parts.slice(0, i).join('/');
-        if (seen.has(ancestor)) {
+        if (seen.has(ancestor.toLowerCase())) {
           throw new DeployError('path_conflict', `"${ancestor}" is both a file and a directory (because of "${p}"); rename one of them`);
         }
       }
@@ -111,7 +113,7 @@ export class Apps {
     if (!manifest || typeof manifest.name !== 'string' || !manifest.name.trim()) throw new DeployError('bad_manifest', 'app.json needs a "name"');
     manifest.name = manifest.name.trim().slice(0, 80);
     manifest.description = typeof manifest.description === 'string' ? manifest.description.trim().slice(0, 500) : '';
-    const hasFrontend = seen.has('public/index.html');
+    const hasFrontend = seen.has('public/index.html'); // already lower-case
     const hasApi = out.some((f) => f.path.startsWith('api/') && !posix.basename(f.path).startsWith('_'));
     if (!hasFrontend && !hasApi) throw new DeployError('nothing_to_serve', 'bundle needs public/index.html and/or at least one api/<route>.js');
     return { manifest, files: out };
@@ -173,8 +175,19 @@ export class Apps {
     writeFileSync(join(tmp, 'package.json'), JSON.stringify({ type: 'module', private: true }));
     const old = `${p.bundle}.old`;
     rmSync(old, { recursive: true, force: true });
-    if (existsSync(p.bundle)) renameSync(p.bundle, old);
-    renameSync(tmp, p.bundle);
+    try {
+      if (existsSync(p.bundle)) renameSync(p.bundle, old);
+      renameSync(tmp, p.bundle);
+    } catch (err) {
+      // On Windows a rename fails with EPERM/EBUSY while a file in the old bundle is still being
+      // read (a static download in flight during the swap). That is transient, so surface it as
+      // a retryable deploy error rather than a raw 500.
+      const code = (err as NodeJS.ErrnoException).code;
+      if (code === 'EPERM' || code === 'EBUSY' || code === 'EACCES') {
+        throw new DeployError('busy', 'a file in this app was in use during the deploy swap; retry the deploy');
+      }
+      throw err;
+    }
     rmSync(old, { recursive: true, force: true });
   }
 

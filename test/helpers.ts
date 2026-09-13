@@ -31,6 +31,7 @@ export async function startHarness(env: Partial<Record<string, string>> = {}, ma
     trustProxy: false,
     staticRpm: 100000,
     apiRpm: 100000,
+    deployPerHour: 100000,
   };
   const services = createServices(cfg, mail);
   const server = createHttpServer(services);
@@ -51,7 +52,14 @@ export async function startHarness(env: Partial<Record<string, string>> = {}, ma
       services.runtime.stopAll();
       await new Promise<void>((r) => server.close(() => r()));
       services.db.close();
-      rmSync(dataDir, { recursive: true, force: true });
+      // On Windows a just-SIGKILLed app child can still hold app.db open for a few ms, so a
+      // plain rmSync races it with EBUSY. maxRetries/retryDelay is Node's built-in answer, and
+      // force:true swallows a file that is genuinely gone. This is teardown only.
+      try {
+        rmSync(dataDir, { recursive: true, force: true, maxRetries: 20, retryDelay: 50 });
+      } catch {
+        // A temp dir we could not remove is the OS's problem to clean up, not a test failure.
+      }
     },
     fetch(path, init = {}) {
       const { token, headers, ...rest } = init as RequestInit & { token?: string };
