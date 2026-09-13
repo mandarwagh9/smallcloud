@@ -7,3 +7,6 @@ data/
 .ex/
 .smoke/
 .coldagent.log
+
+# design: the seeded canvas payload is large and regenerable from the .dc.html sources
+design/smallcloud-web-ui.html
