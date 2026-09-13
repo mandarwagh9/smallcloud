@@ -1,5 +1,11 @@
 # smallcloud
 
+[![CI](https://github.com/mandarwagh9/smallcloud/actions/workflows/ci.yml/badge.svg)](https://github.com/mandarwagh9/smallcloud/actions/workflows/ci.yml)
+[![Node](https://img.shields.io/badge/node-%E2%89%A522.15-3c873a)](https://nodejs.org)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178c6)](https://www.typescriptlang.org)
+[![Tests](https://img.shields.io/badge/tests-83%20passing-0f6f5c)](docs/PLAN.md)
+[![License](https://img.shields.io/badge/license-UNLICENSED-9a3412)](package.json)
+
 A cloud for small software.
 
 Your agent hands this server a folder. It hands back a link you can send to someone.
