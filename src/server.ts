@@ -37,6 +37,8 @@ export interface Services {
   runtime: Runtime;
   mailer: Mailer;
   secure: boolean;
+  /** Only true on a local dev instance with no mail provider: the sign-in link may be shown on the page. */
+  revealMagicLink: boolean;
   limiters: { login: RateLimiter; loginIp: RateLimiter; deploy: RateLimiter; appStatic: RateLimiter; appApi: RateLimiter };
 }
 
@@ -65,6 +67,11 @@ export function createServices(cfg: Config, mailer?: Mailer): Services {
     runtime,
     mailer: m,
     secure: cfg.baseUrl.startsWith('https://'),
+    // Showing the sign-in link on the page is a dev convenience. It is a full account bypass in
+    // production (anyone who types your email sees your link), so it is allowed only when there
+    // is no mail provider AND the instance is plainly local. A remote instance without mail
+    // shows nothing rather than leaking.
+    revealMagicLink: !process.env.RESEND_API_KEY && /^https?:\/\/(localhost|127\.0\.0\.1)(:|\/|$)/i.test(cfg.baseUrl),
     limiters: {
       login: new RateLimiter(5, 15 * 60_000),
       loginIp: new RateLimiter(20, 15 * 60_000),

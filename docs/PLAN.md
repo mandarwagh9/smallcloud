@@ -554,5 +554,44 @@ The other eight, all fixed:
 Refuted and not acted on: a claim that `statSync` on the static path is still TOCTOU after round
 one's stream fix.
 
+## Multi-agent audit, round three (2026-09-13)
+
+Five dimensions the first two rounds did not cover: the latest diff, the test suite itself, the
+zip/export format, the ops surface, and the sign-in flow as a person experiences it. 15 agents,
+**10 confirmed, 0 refuted.** All fixed except two format limits, which are documented and guarded.
+
+The headline is the same root cause a THIRD time, by a new mechanism -- `node:sqlite` ignores the
+permission model:
+
+> **Account takeover via SQL ATTACH (high).** The module-import block stops `import('node:sqlite')`,
+> but app code still has an open `ctx.db` handle, and `ATTACH DATABASE '<dataDir>/platform.db'`
+> through it reads every session id and token hash on the instance. Reproduced end to end: an
+> attacker's app minted a token for another user and read their private app. Reachable by any
+> account on the default config; only `SC_APP_UID` (the Docker image) blocked it. My own isolation
+> test passed the whole time because it only tried a dynamic import.
+
+Fixed by refusing ATTACH/DETACH/VACUUM in the app host, for both `ctx.db` and the editor SQL
+endpoint, with the platform's own export `VACUUM INTO` flagged internal to bypass it. The guard is a
+comment/string-stripping scanner over the SQL text (SQLite keywords cannot be obfuscated the way a
+module specifier can); `SC_APP_UID` stays the OS backstop.
+
+Two of the ten were regressions from round two's own fixes -- again the reason the diff gets its own
+auditor:
+
+| Severity | Problem | Fix |
+|---|---|---|
+| high | Two "security" tests passed with the guard deleted: the `node:sqlite` isolation test (only tried an import) and the static-traversal test (aimed one directory too deep at a file that does not exist). | Rewrote both to probe every reachable path against files that actually exist; each now fails without its guard. |
+| high | Export built the whole archive ~3x over in memory in the control plane -- an OOM DoS for an app with large uploads. | 200 MB cap on the endpoint with a message pointing at `backup.sh`; streaming zip64 is a documented follow-up. |
+| high | `backup.sh` passed the snapshot path via `JSON.stringify`, producing a double-quoted SQL arg whose Windows backslashes became literal; under `set -e` the whole backup aborted before writing anything. | Single-quote the path the way `api.ts` does; verified an archive is produced and restores. |
+| high | The documented restore (extract over the data dir) left stale `-wal`/`-shm` that corrupt or silently undo the restore. | Added `scripts/restore.sh` that moves the old dir aside, extracts into an empty one, and deletes any journals; verified round-trip. |
+| high | A production instance with no mail provider showed the sign-in link on the page -- anyone who typed your email could sign in as you. | Link revealed only on a plainly-local dev instance; `serve` refuses to boot in production without a mail provider. |
+| medium | Round two's `SAFE_ROUTE` 404'd before the `api/index.js` catch-all and blocked route filenames deploy accepts. | Skip only the named-file lookup for an unsafe name; always fall through to the catch-all. |
+| medium | `RateLimiter` eviction dropped oldest-inserted entries, forgiving a sign-in counter that was already at its limit -- a limit bypass by flooding other keys. | Never evict a counter at or over its limit; a `refund()` gives back an attempt when a mail send fails. |
+| medium | A mail-provider outage returned a raw 500 and burned one of the five per-email attempts. | Retryable 503, the attempt refunded, the provider error logged. |
+
+Two findings are documented limits rather than code fixes: the in-memory export cap (above) and the
+lack of zip64 (an archive over ~65,000 entries, reachable only with that many uploaded files). Both
+route large apps to `backup.sh`; see SECURITY.md.
+
 **Still not done**: the rest of M5 -- a public landing/docs site, and the name, license and domain
-decisions, which are Mandar's calls (section 13).
+decisions, which are Mandar's calls (section 13). Plus streaming zip64 export.

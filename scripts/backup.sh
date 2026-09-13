@@ -18,10 +18,15 @@ mkdir -p "$OUT_DIR" "$STAGE/apps"
 
 snapshot() { # snapshot <src.db> <dest.db>
   if [ -f "$1" ]; then
-    node -e "
+    # Single-quote the path with '' escaping, the way src/api.ts does. JSON.stringify produced a
+    # double-quoted argument, which SQLite treats as an identifier, and whose backslashes on
+    # Windows became literal -- so VACUUM INTO threw and, under set -e, the whole backup aborted
+    # before any archive was written.
+    node --no-warnings -e "
       const { DatabaseSync } = require('node:sqlite');
       const db = new DatabaseSync(process.argv[1]);
-      db.exec('vacuum into ' + JSON.stringify(process.argv[2]));
+      const dest = process.argv[2].split(\"'\").join(\"''\");
+      db.exec(\"vacuum into '\" + dest + \"'\");
       db.close();
     " "$1" "$2"
   fi
@@ -44,5 +49,8 @@ ARCHIVE="$OUT_DIR/smallcloud-$STAMP.tar.gz"
 tar -czf "$ARCHIVE" -C "$STAGE" .
 echo "wrote $ARCHIVE"
 
-# Restore: stop the server, replace the data dir with the archive contents, start it.
-#   tar -xzf smallcloud-<stamp>.tar.gz -C /data
+# To restore, use scripts/restore.sh -- do NOT just extract over a live data dir. The archive's
+# databases are clean snapshots with no -wal/-shm, but a running (or crashed) server leaves
+# -wal/-shm beside the originals, and those stale journals would apply on top of the restored
+# databases and corrupt or silently undo the restore.
+#   ./scripts/restore.sh smallcloud-<stamp>.tar.gz /data
