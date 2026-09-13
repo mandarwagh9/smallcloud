@@ -10,6 +10,15 @@ import { zip } from './zip.js';
 import { CONTRACT } from './contract.js';
 import type { AppFile, AppRecord } from './types.js';
 
+/** Percent-decode a path segment, turning a malformed encoding into a clean 400 not a 500. */
+function safeDecode(seg: string): string {
+  try {
+    return decodeURIComponent(seg);
+  } catch {
+    throw new HttpError(400, 'bad_path', 'that path segment is not valid percent-encoding');
+  }
+}
+
 /** Everything under /v1. Bearer token or session cookie; identical behaviour either way. */
 export async function handleApi(s: Services, ctx: RequestCtx): Promise<void> {
   const { res, method } = ctx;
@@ -72,6 +81,8 @@ export async function handleApi(s: Services, ctx: RequestCtx): Promise<void> {
       try {
         app = s.apps.deploy(user, body.files, body.appId);
       } catch (err) {
+        // A bundle that never deployed should not spend the hourly budget.
+        s.limiters.deploy.refund(user.email);
         if (err instanceof DeployError) throw new HttpError(400, err.code, err.message);
         throw err;
       }
@@ -131,7 +142,7 @@ export async function handleApi(s: Services, ctx: RequestCtx): Promise<void> {
         return sendJson(res, 200, { share, url: appUrl(s, app) });
       }
       if (method === 'DELETE') {
-        const principal = path[3] ? decodeURIComponent(path[3]) : (await readJson<{ principal?: string }>(ctx.req)).principal;
+        const principal = path[3] ? safeDecode(path[3]) : (await readJson<{ principal?: string }>(ctx.req)).principal;
         if (!principal) throw new HttpError(400, 'bad_request', 'name the principal to remove');
         const ok = removeShare(s.db, app.id, parsePrincipal(principal));
         return sendJson(res, ok ? 200 : 404, ok ? { removed: principal } : { error: 'not_found', message: `${principal} was not shared` });
@@ -158,7 +169,7 @@ export async function handleApi(s: Services, ctx: RequestCtx): Promise<void> {
       return sendJson(res, 200, { keys: s.apps.secretKeys(app.id) });
     }
     if (method === 'DELETE') {
-      const key = path[3] ? decodeURIComponent(path[3]) : (await readJson<{ key?: string }>(ctx.req)).key;
+      const key = path[3] ? safeDecode(path[3]) : (await readJson<{ key?: string }>(ctx.req)).key;
       if (!key) throw new HttpError(400, 'bad_request', 'name the secret key to remove');
       const ok = s.apps.deleteSecret(app.id, key);
       s.runtime.stop(app.id);
