@@ -6,7 +6,7 @@
 // the platform secret, or any other app's files. See docs/PLAN.md 6.5.
 
 import { DatabaseSync } from 'node:sqlite';
-import { readFileSync, writeFileSync, readdirSync, unlinkSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync, unlinkSync, existsSync, mkdirSync, statSync } from 'node:fs';
 import { join, extname, basename, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import * as nodeModule from 'node:module';
@@ -204,8 +204,9 @@ const appFiles = {
     const nm = safeName(name);
     const buf = typeof data === 'string' ? Buffer.from(data, 'utf8') : Buffer.from(data);
     const dest = join(FILES_DIR, nm);
-    const prev = existsSync(dest) ? statSync(dest).size : 0;
-    const isNew = prev === 0 && !existsSync(dest);
+    const exists = existsSync(dest);
+    const prev = exists ? statSync(dest).size : 0;
+    const isNew = !exists;
     if (isNew && filesCount >= MAX_FILES) {
       throw new Error(`ctx.files: this app already has the maximum ${MAX_FILES} files`);
     }
@@ -330,9 +331,17 @@ async function appFetch(input, init) {
     const loc = res.headers.get('location');
     if (!loc) return res;
     current = new URL(loc, current);
-    // A redirect drops the body; subsequent hops are GETs, as fetch's own follow would do.
-    if (opts.body) delete opts.body;
-    if (res.status === 303) opts.method = 'GET';
+    // Match the redirect semantics fetch itself uses: 303 (and, by long-standing convention,
+    // 301/302) turn the request into a bodyless GET; 307/308 preserve the method AND the body.
+    // The old code dropped the body on every hop while keeping the method, so a POST across a
+    // 307/308 was sent method-but-no-body -- broken.
+    const method = (opts.method || 'GET').toUpperCase();
+    if (res.status === 307 || res.status === 308) {
+      // preserve method and body as-is
+    } else if (res.status === 303 || ((res.status === 301 || res.status === 302) && method !== 'GET' && method !== 'HEAD')) {
+      opts.method = 'GET';
+      delete opts.body;
+    }
   }
   throw new Error('ctx.fetch: too many redirects');
 }

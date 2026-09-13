@@ -561,3 +561,30 @@ test('api tokens can be listed with an id and revoked, and an evicted email lose
   assert.equal((await scoped.fetch('/v1/me', { token: evicted })).status, 401);
   await scoped.close();
 });
+
+// Round six: ctx.files used statSync without importing it, so overwrite/delete/post-restart
+// quota scans 500'd. The round-five quota test only did fresh puts and missed it.
+test('ctx.files overwrite, delete and list all work (statSync path)', async () => {
+  const { body, status } = await probeRoute(
+    'files-lifecycle',
+    `ctx.files.put('a.txt', 'one');
+     ctx.files.put('a.txt', 'two');            // overwrite -> statSync(dest)
+     ctx.files.put('b.txt', 'bee');
+     const removed = ctx.files.delete('b.txt'); // delete -> statSync(p)
+     return { json: { a: ctx.files.getText('a.txt'), removed, list: ctx.files.list() } };`,
+  );
+  assert.equal(status, 200, `ctx.files lifecycle failed: ${JSON.stringify(body)}`);
+  assert.equal(body.a, 'two');
+  assert.equal(body.removed, true);
+  assert.deepEqual(body.list, ['a.txt']);
+});
+
+test('a malformed percent-encoded principal/key on a DELETE is a clean 400, not a 500', async () => {
+  const app = await deploy(h, token, bundle({ 'app.json': '{"name":"r6-decode"}', 'public/index.html': 'x' }));
+  for (const path of [`/v1/apps/${app.id}/shares/%ZZ`, `/v1/apps/${app.id}/secrets/%E0%A4`]) {
+    const res = await h.fetch(path, { method: 'DELETE', token });
+    assert.equal(res.status, 400, `${path} returned ${res.status}`);
+    const body = await res.json();
+    assert.equal(body.error, 'bad_path');
+  }
+});

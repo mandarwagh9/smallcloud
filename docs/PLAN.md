@@ -649,5 +649,31 @@ The SSRF-redirect and the case-fold regression were both introduced by earlier r
 the fifth consecutive round where the worst finding lived in a prior change, which is why the diff
 gets its own auditor every time.
 
+## Multi-agent audit, round six (2026-09-13)
+
+Broadened beyond pure security: sharing concurrency, a real login-to-deploy subprocess chain, a
+doc-promise-to-test differential, the error contract, and the round-five diff. **The workflow hit a
+session limit and 9 of 13 agents died mid-run**, so its `confirmed: []` was an *incomplete* result,
+not a clean one -- the surviving "refuted" list was really unverified findings. Per the standing
+rule (check `agents_error` before trusting an empty audit), I verified each self-checkable finding
+directly and fixed the real ones. Seven fixed; two were regressions from round five.
+
+| Severity | Problem | Fix |
+|---|---|---|
+| high | **`ctx.files` used `statSync` without importing it**, so an overwrite, a delete, or a post-restart quota rescan threw "statSync is not defined" (500). Round five's quota test only did fresh puts, which never hit that path -- a test that passed for the wrong reason. | Import `statSync`; simplify the new-file check. Reproduced overwrite/delete/restart, added a lifecycle regression test. |
+| medium | **The `smallcloud tokens` / `tokens rm` CLI commands never landed** -- round five's patch silently failed to match, so the USAGE text and client methods were dead code and the docs lied. | Added the missing `case 'tokens'`; verified `smallcloud tokens` reaches the client. |
+| medium | The redirect loop dropped the request body on every hop, so a POST across a 307/308 (which must preserve method *and* body) was sent bodyless. | Follow fetch's own rules: 307/308 preserve method+body; 303 (and 301/302 for POST) become a bodyless GET. |
+| medium | `smallcloud mcp-install` ran `claude mcp add` through a Windows shell, and the space in `C:\Program Files
+odejs
+ode.exe` split the command -- registering a broken, unlaunchable server while reporting success. | Resolve the real `claude` path and run it with no shell; on failure, fall through to printing the config JSON instead of silently corrupting it. |
+| medium | MCP had no `smallcloud_export`, though PLAN 6.7 and F19 list it and "leaving" is a core flow. | Added the tool: writes the zip to a path the agent names and returns `{wrote, bytes}`. |
+| low | Malformed percent-encoding in a `/v1/.../shares` or `/secrets` DELETE segment threw `URIError` -> raw 500. | A `safeDecode` helper turns it into a clean 400 `bad_path`, matching the other decode sites. |
+| low | A deploy that failed validation still spent one of the 30/hour budget slots. | Refund the deploy attempt on failure. |
+
+Two of the seven (`statSync`, the redirect body) came from round five's own changes -- the sixth
+straight round where a prior fix introduced the worst regression. The session-limit interruption is
+itself the lesson this round reinforces: an empty `confirmed` from a workflow that lost most of its
+agents must be treated as "unknown", not "clean".
+
 **Still not done**: the rest of M5 -- a public landing/docs site, and the name, license and domain
 decisions, which are Mandar's calls (section 13). Plus streaming zip64 export.

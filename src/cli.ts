@@ -160,6 +160,25 @@ export async function main(argv: string[]): Promise<number> {
         return 0;
       }
 
+      case 'tokens': {
+        const client = new Client(requireConfig());
+        const sub = args.shift();
+        if (sub === 'rm') {
+          await client.revokeToken(need(args[0], 'give a token id'));
+          process.stdout.write('Revoked.\n');
+          return 0;
+        }
+        const { tokens } = await client.listTokens();
+        if (!tokens.length) {
+          process.stdout.write('No tokens.\n');
+          return 0;
+        }
+        for (const t of tokens) {
+          process.stdout.write(`${(t.id ?? '(legacy)').padEnd(10)} ${t.name.padEnd(20)} ${t.lastUsed ? 'used ' + new Date(t.lastUsed).toISOString() : 'never used'}\n`);
+        }
+        return 0;
+      }
+
       case 'mcp': {
         const { runMcpServer } = await import('./mcp.js');
         await runMcpServer();

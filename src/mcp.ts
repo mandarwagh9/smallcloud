@@ -1,7 +1,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
 import { readDirAsFiles } from './apps.js';
 import { ApiError, Client, deployFiles, requireConfig } from './client.js';
 import { CONTRACT } from './contract.js';
@@ -112,6 +113,18 @@ export function buildMcpServer(): McpServer {
     ({ app }) => run(async () => client().remove(app)),
   );
 
+  server.tool(
+    'smallcloud_export',
+    'Download an app as a zip (its source, database and uploaded files) to a local path -- the way to leave with everything.',
+    { app: z.string().describe('app id or slug'), dest: z.string().describe('absolute path to write the .zip to, e.g. /tmp/todo.zip') },
+    ({ app, dest }) =>
+      run(async () => {
+        const buf = await client().exportZip(app);
+        writeFileSync(dest, buf);
+        return { wrote: dest, bytes: buf.length };
+      }),
+  );
+
   return server;
 }
 
@@ -124,11 +137,23 @@ export async function runMcpServer(): Promise<void> {
 export function installMcp(): string {
   const cfg = requireConfig();
   const bin = process.argv[1];
+  // Resolve the real claude binary and run it WITHOUT a shell. Going through cmd.exe on Windows
+  // re-parses the argv, and the space in "C:\Program Files\nodejs\node.exe" (process.execPath)
+  // splits the command -- storing a broken, unlaunchable registration while reporting success.
+  // No shell means we either register a correct command or fall through to printing the config.
+  let claudeBin = null;
   try {
+    const which = process.platform === 'win32' ? 'where claude' : 'command -v claude';
+    claudeBin = execSync(which, { encoding: 'utf8' }).split(String.fromCharCode(10)).map((l) => l.trim()).find(Boolean) || null;
+  } catch {
+    claudeBin = null;
+  }
+  try {
+    if (!claudeBin) throw new Error('claude not found on PATH');
     execFileSync(
-      'claude',
+      claudeBin,
       ['mcp', 'add', 'smallcloud', '--scope', 'user', '--env', `SMALLCLOUD_URL=${cfg.url}`, '--env', `SMALLCLOUD_TOKEN=${cfg.token}`, '--', process.execPath, bin, 'mcp'],
-      { stdio: 'inherit', shell: process.platform === 'win32' },
+      { stdio: 'inherit' },
     );
     return 'Registered the smallcloud MCP server with Claude Code. Restart Claude Code to pick it up.';
   } catch {
