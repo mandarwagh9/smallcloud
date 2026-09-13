@@ -14,6 +14,8 @@ export interface Config {
   staticRpm: number;
   apiRpm: number;
   deployPerHour: number;
+  appQuotaBytes: number;
+  appMaxFiles: number;
 }
 
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
@@ -37,5 +39,7 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
     staticRpm: Number(env.SC_STATIC_RPM || 3000),
     apiRpm: Number(env.SC_API_RPM || 1200),
     deployPerHour: Number(env.SC_DEPLOY_PER_HOUR || 30),
+    appQuotaBytes: Number(env.SC_APP_QUOTA_BYTES || 100 * 1024 * 1024),
+    appMaxFiles: Number(env.SC_APP_MAX_FILES || 10000),
   };
 }

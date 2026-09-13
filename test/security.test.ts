@@ -502,3 +502,62 @@ test('an app with many stored files still redeploys and serves (O(1) ownership h
   const after = await h.json(`/a/${app.slug}/api/seed`, { token });
   assert.equal(after.body.n, 60, 'uploaded files must survive a redeploy');
 });
+
+// Round five: ctx.fetch missed IPv4-mapped IPv6 and did not re-check redirect targets.
+test('ctx.fetch blocks private addresses across every encoding', async () => {
+  const { body } = await probe(
+    'ssrf-encodings',
+    `const out = {};
+     for (const u of [
+       'http://127.0.0.1/', 'http://[::1]/', 'http://[::ffff:127.0.0.1]/', 'http://[::ffff:7f00:1]/',
+       'http://2130706433/', 'http://0x7f000001/', 'http://127.1/', 'http://0177.0.0.1/',
+       'http://169.254.169.254/', 'http://[fe80::1]/', 'http://[fc00::1]/', 'http://[::]/',
+       'http://10.0.0.5/', 'http://192.168.1.1/', 'http://172.16.0.1/', 'http://100.64.0.1/', 'http://0.0.0.0/',
+     ]) {
+       try { await ctx.fetch(u); out[u] = 'ALLOWED'; } catch (e) { out[u] = 'blocked'; }
+     }
+     return { json: out };`,
+  );
+  for (const [u, v] of Object.entries(body)) assert.equal(v, 'blocked', `${u} was reachable`);
+});
+
+test('a ctx.log flood is capped and does not freeze the control plane', async () => {
+  const app = await deploy(h, token, bundle({ 'app.json': '{"name":"r5-logflood"}', 'api/x.js': 'export default (req, ctx) => { for (let i = 0; i < 50000; i++) ctx.log("x" + i); return { json: { ok: true } }; }' }));
+  const started = Date.now();
+  const res = await h.json(`/a/${app.slug}/api/x`, { token });
+  assert.equal(res.status, 200);
+  assert.ok(Date.now() - started < 5000, 'the flood should be capped, not run for seconds');
+  const logs = await h.json(`/v1/apps/${app.id}/logs?limit=500`, { token });
+  assert.ok(logs.body.logs.length < 300, `logs were not capped: ${logs.body.logs.length}`);
+  assert.ok(logs.body.logs.some((l: any) => l.msg.includes('truncated')));
+  assert.equal((await h.json('/health')).status, 200);
+});
+
+test('ctx.files enforces a per-app storage quota', async () => {
+  const tight = await startHarness();
+  tight.services.cfg.appQuotaBytes = 4000; // tiny quota for the test
+  // rebuild runtime with the small quota
+  const { Runtime } = await import('../src/runtime.js');
+  (tight.services as any).runtime = new Runtime(tight.services.apps, { quotaBytes: 4000, maxFiles: 3 });
+  const t = tight.tokenFor('o@x.com');
+  const app = await deploy(tight, t, bundle({ 'app.json': '{"name":"r5-quota"}', 'api/x.js': 'export default (req, ctx) => { const r = []; for (let i = 0; i < 10; i++) { try { ctx.files.put("f" + i + ".bin", "y".repeat(1500)); r.push("ok"); } catch (e) { r.push("blocked"); break; } } return { json: { r } }; }' }));
+  const res = await tight.json(`/a/${app.slug}/api/x`, { token: t });
+  assert.ok(res.body.r.includes('blocked'), 'a quota-exceeding put must be rejected');
+  assert.ok(res.body.r.filter((x: string) => x === 'ok').length < 10, 'not all writes should succeed');
+  await tight.close();
+});
+
+test('api tokens can be listed with an id and revoked, and an evicted email loses access', async () => {
+  const scoped = await startHarness({ SC_ALLOWED_EMAILS: 'keep@x.com' });
+  const tok = scoped.tokenFor('keep@x.com');
+  assert.equal((await scoped.fetch('/v1/me', { token: tok })).status, 200);
+  const list = await scoped.json('/v1/tokens', { token: tok });
+  const id = list.body.tokens[0].id;
+  assert.ok(id, 'a token must have a revocable id');
+  assert.equal((await scoped.fetch(`/v1/tokens/${id}`, { method: 'DELETE', token: tok })).status, 200);
+  assert.equal((await scoped.fetch('/v1/me', { token: tok })).status, 401, 'a revoked token must stop working');
+  // an email not on the allowlist is refused even with a valid token row (eviction)
+  const evicted = scoped.services.auth.createApiToken('stranger@x.com', 't');
+  assert.equal((await scoped.fetch('/v1/me', { token: evicted })).status, 401);
+  await scoped.close();
+});

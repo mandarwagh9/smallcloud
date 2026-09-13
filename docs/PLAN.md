@@ -630,5 +630,24 @@ Also fixed a Windows-only test-teardown flake (`rmSync` racing a just-killed chi
 now uses `rmSync` retries), and made the deploy rate limit configurable (`SC_DEPLOY_PER_HOUR`) so the
 growing suite does not trip it.
 
+## Multi-agent audit, round five (2026-09-13)
+
+Adversarial passes on the auth/session state machine, SSRF depth, resource exhaustion, the
+secrets crypto, and the round-four diff. 11 agents, **6 confirmed, 0 refuted**, each reproduced.
+(The crypto dimension found nothing -- AES-256-GCM with a random IV and verified tag, HMAC verify
+constant-time, held up.)
+
+| Severity | Problem | Fix |
+|---|---|---|
+| high | `ctx.fetch` followed a 3xx redirect from an allowed host to a private address without re-checking it (SSRF), and the denylist missed IPv4-mapped IPv6 (`::ffff:127.0.0.1`) and other numeric forms. | Replaced the regex with a numeric IP classifier (unwraps mapped IPv4, checks loopback/link-local/RFC1918/ULA/CGNAT), and follow redirects manually, re-validating every hop. Verified against 17 encodings. |
+| high | A single request's `ctx.log()` flood accumulated unboundedly and became one SQLite insert per line on the control plane -- a co-tenant freeze. | Cap the per-invoke log payload (200 lines / 64 KB, then a truncation marker) before it crosses IPC; cap app response headers too. 50,000 log calls now finish in ~160 ms. |
+| high | API tokens never expired and no product surface could revoke one or evict a user; only a hand-edit of `platform.db` worked, contradicting the "revocable" promise. | Each token now has a non-secret id; revoke via `/me/tokens`, `DELETE /v1/tokens/:id`, or `smallcloud tokens rm <id>`. `userFromApiToken`/`userFromSession` re-check `isAllowed`, so removing an email from `SC_ALLOWED_EMAILS` evicts its live credentials. |
+| medium | No per-app disk quota: `ctx.files` (or `ctx.db`) could fill the shared volume and break `platform.db` and every co-tenant. | `ctx.files.put` enforces `SC_APP_QUOTA_BYTES` (100 MB) and `SC_APP_MAX_FILES` (10,000), tracked incrementally so put stays O(1). |
+| low | Round four's case-fold dedup made `hasFrontend` read the folded set, so a mis-cased `public/index.html` passed validation then 404'd on Linux. | `hasFrontend` checks the real case-preserved paths that are written to disk. |
+
+The SSRF-redirect and the case-fold regression were both introduced by earlier rounds' fixes --
+the fifth consecutive round where the worst finding lived in a prior change, which is why the diff
+gets its own auditor every time.
+
 **Still not done**: the rest of M5 -- a public landing/docs site, and the name, license and domain
 decisions, which are Mandar's calls (section 13). Plus streaming zip64 export.

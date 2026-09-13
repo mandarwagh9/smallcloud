@@ -62,6 +62,8 @@ export default async function (req, ctx) {
 | \`ctx.files.getText(name)\` | string, or null |
 | \`ctx.files.list()\` | array of names |
 | \`ctx.files.delete(name)\` | true if it existed |
+
+\`ctx.files\` storage is capped per app (default 100 MB and 10,000 files); \`put\` throws past the cap.
 | \`ctx.user\` | \`{email}\` of the signed-in person, or null if nobody is signed in |
 | \`ctx.env\` | secrets the owner set (never in your code) |
 | \`ctx.log(...)\` | writes to the app log, visible via \`logs\` |

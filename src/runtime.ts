@@ -36,7 +36,7 @@ export class Runtime {
 
   constructor(
     private apps: Apps,
-    private isolation: { appUid?: number; appGid?: number } = {},
+    private isolation: { appUid?: number; appGid?: number; quotaBytes?: number; maxFiles?: number } = {},
   ) {}
 
   /** Run one request inside the app's own process, starting it if needed. */
@@ -172,6 +172,8 @@ export class Runtime {
         SC_BUNDLE_DIR: paths.bundle,
         SC_DB_PATH: paths.db,
         SC_FILES_DIR: paths.files,
+        SC_APP_QUOTA_BYTES: String(this.isolation.quotaBytes ?? 100 * 1024 * 1024),
+        SC_APP_MAX_FILES: String(this.isolation.maxFiles ?? 10000),
         PATH: process.env.PATH ?? '',
       },
       stdio: ['ignore', 'pipe', 'pipe', 'ipc'],

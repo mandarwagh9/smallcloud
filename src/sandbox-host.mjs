@@ -176,12 +176,47 @@ function safeName(name) {
   return s;
 }
 
+// Per-app storage caps so one tenant cannot fill the shared volume and break platform.db and
+// every co-tenant. Usage is summed once (lazily) then kept incrementally, so put() stays O(1).
+const QUOTA_BYTES = Number(process.env.SC_APP_QUOTA_BYTES || 100 * 1024 * 1024);
+const MAX_FILES = Number(process.env.SC_APP_MAX_FILES || 10000);
+let filesBytes = null;
+let filesCount = null;
+function ensureUsage() {
+  if (filesBytes !== null) return;
+  filesBytes = 0;
+  filesCount = 0;
+  if (existsSync(FILES_DIR)) {
+    for (const n of readdirSync(FILES_DIR)) {
+      try {
+        filesBytes += statSync(join(FILES_DIR, n)).size;
+        filesCount += 1;
+      } catch {
+        // a file that vanished mid-scan does not count
+      }
+    }
+  }
+}
+
 const appFiles = {
   put(name, data) {
-    mkdirSync(FILES_DIR, { recursive: true });
+    ensureUsage();
+    const nm = safeName(name);
     const buf = typeof data === 'string' ? Buffer.from(data, 'utf8') : Buffer.from(data);
-    writeFileSync(join(FILES_DIR, safeName(name)), buf);
-    return { name: safeName(name), size: buf.length };
+    const dest = join(FILES_DIR, nm);
+    const prev = existsSync(dest) ? statSync(dest).size : 0;
+    const isNew = prev === 0 && !existsSync(dest);
+    if (isNew && filesCount >= MAX_FILES) {
+      throw new Error(`ctx.files: this app already has the maximum ${MAX_FILES} files`);
+    }
+    if (filesBytes - prev + buf.length > QUOTA_BYTES) {
+      throw new Error(`ctx.files: this app is over its ${Math.round(QUOTA_BYTES / 1024 / 1024)} MB storage quota`);
+    }
+    mkdirSync(FILES_DIR, { recursive: true });
+    writeFileSync(dest, buf);
+    filesBytes += buf.length - prev;
+    if (isNew) filesCount += 1;
+    return { name: nm, size: buf.length };
   },
   get(name) {
     const p = join(FILES_DIR, safeName(name));
@@ -198,6 +233,14 @@ const appFiles = {
   delete(name) {
     const p = join(FILES_DIR, safeName(name));
     if (!existsSync(p)) return false;
+    if (filesBytes !== null) {
+      try {
+        filesBytes -= statSync(p).size;
+        filesCount -= 1;
+      } catch {
+        // best effort
+      }
+    }
     unlinkSync(p);
     return true;
   },
@@ -205,14 +248,93 @@ const appFiles = {
 
 // ---- ctx.fetch ------------------------------------------------------------
 
-const PRIVATE_HOST =
-  /^(localhost|.*\.local|.*\.internal|0\.0\.0\.0|127\.\d+\.\d+\.\d+|10\.\d+\.\d+\.\d+|192\.168\.\d+\.\d+|169\.254\.\d+\.\d+|172\.(1[6-9]|2\d|3[01])\.\d+\.\d+|\[?::1\]?|\[?fd[0-9a-f]{2}:.*)$/i;
+// Classify a hostname as private/internal so ctx.fetch cannot reach the control plane or the
+// local network. WHATWG URL already normalises numeric IPv4 forms (2130706433, 0x7f000001,
+// 127.1, 0177.0.0.1) to dotted quads, so the danger the old regex missed was IPv6 -- especially
+// IPv4-mapped forms like ::ffff:127.0.0.1, which URL renders as [::ffff:7f00:1]. This parses the
+// address numerically rather than pattern-matching text.
+function ipv4IsPrivate(a, b, c, d) {
+  if ([a, b, c, d].some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return true; // malformed -> refuse
+  if (a === 0 || a === 127 || a === 10) return true; // this-network, loopback, RFC1918
+  if (a === 169 && b === 254) return true; // link-local
+  if (a === 192 && b === 168) return true; // RFC1918
+  if (a === 172 && b >= 16 && b <= 31) return true; // RFC1918
+  if (a === 100 && b >= 64 && b <= 127) return true; // CGNAT 100.64/10
+  return false;
+}
+
+function expandIpv6(host) {
+  // Split off an embedded IPv4 tail (::ffff:127.0.0.1) if present.
+  let v4tail = null;
+  const dot = host.lastIndexOf('.');
+  if (dot >= 0) {
+    const colon = host.lastIndexOf(':');
+    const tail = host.slice(colon + 1);
+    const m = tail.split('.');
+    if (m.length === 4) {
+      v4tail = m.map((x) => Number(x));
+      host = host.slice(0, colon + 1) + ((v4tail[0] << 8) | v4tail[1]).toString(16) + ':' + ((v4tail[2] << 8) | v4tail[3]).toString(16);
+    }
+  }
+  const halves = host.split('::');
+  if (halves.length > 2) return null;
+  const head = halves[0] ? halves[0].split(':') : [];
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+  const missing = 8 - head.length - tail.length;
+  if (halves.length === 1 && head.length !== 8) return null;
+  if (missing < 0) return null;
+  const groups = [...head, ...Array(halves.length === 2 ? missing : 0).fill('0'), ...tail].map((g) => parseInt(g || '0', 16));
+  if (groups.length !== 8 || groups.some((g) => !Number.isInteger(g) || g < 0 || g > 0xffff)) return null;
+  return { groups, v4tail };
+}
+
+function isPrivateHost(rawHost) {
+  const host = String(rawHost).toLowerCase().replace(/^\[/, '').replace(/\]$/, '');
+  if (!host) return true;
+  // Named internal forms.
+  if (host === 'localhost' || host.endsWith('.localhost') || host.endsWith('.local') || host.endsWith('.internal')) return true;
+  // Dotted IPv4 (URL has already normalised the exotic encodings to this form).
+  const v4 = host.split('.');
+  if (v4.length === 4 && v4.every((p) => /^\d+$/.test(p))) {
+    const [a, b, c, d] = v4.map((n) => Number(n));
+    return ipv4IsPrivate(a, b, c, d);
+  }
+  // IPv6.
+  if (host.includes(':')) {
+    const parsed = expandIpv6(host);
+    if (!parsed) return true; // cannot classify -> refuse
+    const g = parsed.groups;
+    if (parsed.v4tail) return ipv4IsPrivate(...parsed.v4tail); // IPv4-mapped/compatible
+    if (g.every((x) => x === 0)) return true; // ::
+    if (g.slice(0, 7).every((x) => x === 0) && g[7] === 1) return true; // ::1 loopback
+    if ((g[0] & 0xffc0) === 0xfe80) return true; // fe80::/10 link-local
+    if ((g[0] & 0xfe00) === 0xfc00) return true; // fc00::/7 ULA
+    if (g[0] === 0 && g[1] === 0 && g[2] === 0 && g[3] === 0 && g[4] === 0 && g[5] === 0xffff) return ipv4IsPrivate((g[6] >> 8) & 0xff, g[6] & 0xff, (g[7] >> 8) & 0xff, g[7] & 0xff);
+    return false;
+  }
+  return false; // an ordinary public hostname (DNS rebinding remains the documented gap)
+}
+
+const MAX_REDIRECTS = 5;
 
 async function appFetch(input, init) {
-  const url = new URL(typeof input === 'string' ? input : input.url);
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') throw new Error(`ctx.fetch: only http and https are allowed, got ${url.protocol}`);
-  if (PRIVATE_HOST.test(url.hostname)) throw new Error(`ctx.fetch: ${url.hostname} is a private address and is not reachable from an app`);
-  return fetch(url, init);
+  let current = new URL(typeof input === 'string' ? input : input.url);
+  const opts = { ...(init || {}) };
+  // Re-check every hop. fetch would otherwise follow a 3xx from an allowed host to a private
+  // Location without re-validating it (SSRF via redirect). We follow manually and classify each.
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    if (current.protocol !== 'http:' && current.protocol !== 'https:') throw new Error(`ctx.fetch: only http and https are allowed, got ${current.protocol}`);
+    if (isPrivateHost(current.hostname)) throw new Error(`ctx.fetch: ${current.hostname} is a private address and is not reachable from an app`);
+    const res = await fetch(current, { ...opts, redirect: 'manual' });
+    if (res.status < 300 || res.status >= 400) return res;
+    const loc = res.headers.get('location');
+    if (!loc) return res;
+    current = new URL(loc, current);
+    // A redirect drops the body; subsequent hops are GETs, as fetch's own follow would do.
+    if (opts.body) delete opts.body;
+    if (res.status === 303) opts.method = 'GET';
+  }
+  throw new Error('ctx.fetch: too many redirects');
 }
 
 // ---- routing --------------------------------------------------------------
@@ -311,7 +433,25 @@ function send(msg) {
 }
 
 async function invoke(m) {
+  // A single request's logs cross IPC and become one SQLite insert each on the control plane,
+  // so an uncapped ctx.log() loop could freeze the whole box. Bound the count and total bytes;
+  // after the cap one marker is added and further calls are dropped.
+  const LOG_MAX_LINES = 200;
+  const LOG_MAX_BYTES = 64 * 1024;
   const logs = [];
+  let logBytes = 0;
+  let logCapped = false;
+  const addLog = (level, msg) => {
+    if (logCapped) return;
+    if (logs.length >= LOG_MAX_LINES || logBytes >= LOG_MAX_BYTES) {
+      logs.push({ level: 'error', msg: 'ctx.log output truncated for this request (limit reached)' });
+      logCapped = true;
+      return;
+    }
+    const line = String(msg).slice(0, 4000);
+    logBytes += line.length;
+    logs.push({ level, msg: line });
+  };
   try {
     const handler = await loadRoute(m.request.route);
     if (!handler) {
@@ -333,8 +473,7 @@ async function invoke(m) {
       env: Object.freeze({ ...m.env }),
       appId: APP_ID,
       log: (...args) => {
-        const line = args.map((a) => (typeof a === 'string' ? a : inspectish(a))).join(' ');
-        logs.push({ level: 'info', msg: line });
+        addLog('info', args.map((a) => (typeof a === 'string' ? a : inspectish(a))).join(' '));
       },
       fetch: appFetch,
     };
@@ -342,7 +481,7 @@ async function invoke(m) {
     return { t: 'result', invokeId: m.invokeId, response: normalizeResponse(out), logs };
   } catch (err) {
     const msg = err && err.stack ? String(err.stack) : String(err);
-    logs.push({ level: 'error', msg });
+    addLog('error', msg);
     return {
       t: 'result',
       invokeId: m.invokeId,

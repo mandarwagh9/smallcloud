@@ -55,6 +55,13 @@ export async function handlePage(s: Services, ctx: RequestCtx): Promise<void> {
     }
   }
 
+  if (path === '/me/tokens/revoke' && method === 'POST') {
+    const form = await formData(ctx);
+    const id = form.get('id');
+    if (id) s.auth.revokeApiToken(user.email, id);
+    return redirect(res, '/me/tokens');
+  }
+
   if (seg[0] === 'cli' && seg.length === 2) {
     if (method === 'GET') return sendHtml(res, 200, renderCliApprove(user, seg[1], false));
     if (method === 'POST') {

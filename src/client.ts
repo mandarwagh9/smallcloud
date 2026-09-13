@@ -141,6 +141,14 @@ export class Client {
     return this.request('DELETE', `/v1/apps/${encodeURIComponent(id)}`);
   }
 
+  listTokens(): Promise<{ tokens: Array<{ id: string | null; name: string; createdAt: number; lastUsed: number | null }> }> {
+    return this.request('GET', '/v1/tokens');
+  }
+
+  revokeToken(id: string): Promise<unknown> {
+    return this.request('DELETE', `/v1/tokens/${encodeURIComponent(id)}`);
+  }
+
   contract(): Promise<string> {
     return fetch(`${this.cfg.url}/v1/contract`).then((r) => r.text());
   }
