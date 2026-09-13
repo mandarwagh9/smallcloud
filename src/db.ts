@@ -24,6 +24,7 @@ create table if not exists sessions (
 );
 create table if not exists api_tokens (
   hash text primary key,
+  id text,
   email text not null,
   name text not null,
   created_at integer not null,

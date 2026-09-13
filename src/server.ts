@@ -58,7 +58,7 @@ export function createServices(cfg: Config, mailer?: Mailer): Services {
   const apps = new Apps(db, cfg.dataDir, cfg.secret);
   const m = mailer ?? mailerFromEnv(process.env);
   const auth = new Auth({ db, mailer: m, baseUrl: cfg.baseUrl, allowedEmails: cfg.allowedEmails, secret: cfg.secret });
-  const runtime = new Runtime(apps, { appUid: cfg.appUid, appGid: cfg.appGid });
+  const runtime = new Runtime(apps, { appUid: cfg.appUid, appGid: cfg.appGid, quotaBytes: cfg.appQuotaBytes, maxFiles: cfg.appMaxFiles });
   return {
     cfg,
     db,
@@ -231,9 +231,13 @@ export const APP_HEADER_ALLOWLIST = new Set([
   'link',
 ]);
 
+const MAX_APP_HEADERS = 50;
+
 function safeAppHeaders(s: Services, app: AppRecord, headers: Record<string, string> | undefined): Record<string, string> {
   const out: Record<string, string> = {};
+  let count = 0;
   for (const [rawKey, value] of Object.entries(headers ?? {})) {
+    if (count++ >= MAX_APP_HEADERS) break;
     const key = rawKey.toLowerCase().trim();
     if (APP_HEADER_ALLOWLIST.has(key) || key.startsWith('x-')) {
       // A header value may not smuggle a second header or a body.

@@ -38,6 +38,9 @@ npx smallcloud mcp-install
 | `SC_APP_UID` / `SC_APP_GID` | recommended | POSIX only. Run app processes as this user so the OS enforces isolation. The Docker image sets both to 10001. See SECURITY.md. |
 | `SC_STATIC_RPM` | no | Static requests per minute, per app, per client IP. Default 3000 (50 rps). |
 | `SC_API_RPM` | no | API requests per minute, per app, per client IP. Default 1200 (20 rps). |
+| `SC_DEPLOY_PER_HOUR` | no | Deploys per hour per account. Default 30. |
+| `SC_APP_QUOTA_BYTES` | no | Max ctx.files bytes per app. Default 100 MB. |
+| `SC_APP_MAX_FILES` | no | Max ctx.files count per app. Default 10,000. |
 
 **Node version matters for isolation.** Run Node >= 22.15: older versions lack
 `module.registerHooks`, so apps can load `node:sqlite` and read `platform.db` directly.

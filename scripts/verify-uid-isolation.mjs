@@ -38,6 +38,8 @@ const cfg = {
   staticRpm: 100000,
   apiRpm: 100000,
   deployPerHour: 100000,
+  appQuotaBytes: 100 * 1024 * 1024,
+  appMaxFiles: 10000,
     staticRpm: 100000,
     apiRpm: 100000,
   appUid: APP_UID,

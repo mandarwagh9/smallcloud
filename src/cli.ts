@@ -22,6 +22,8 @@ const USAGE = `smallcloud - a cloud for small software
   smallcloud secrets rm <app> KEY
   smallcloud export <app> [file.zip]
   smallcloud delete <app>
+  smallcloud tokens                       list your agent tokens
+  smallcloud tokens rm <id>               revoke one agent token
   smallcloud contract                     print the app contract
   smallcloud mcp                          run the MCP server on stdio
   smallcloud mcp-install                  register this server with Claude Code

@@ -1,7 +1,7 @@
 import type { Db } from './db.js';
 import type { Mailer } from './email.js';
 import type { User } from './types.js';
-import { randomToken, sha256, encrypt, decrypt } from './crypto.js';
+import { randomId, randomToken, sha256, encrypt, decrypt } from './crypto.js';
 
 const MAGIC_TTL_MS = 15 * 60 * 1000;
 const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
@@ -87,6 +87,7 @@ export class Auth {
       | { email: string; expires_at: number }
       | undefined;
     if (!row || row.expires_at < this.now()) return null;
+    if (!this.isAllowed(row.email)) return null;
     return { email: row.email };
   }
 
@@ -98,7 +99,9 @@ export class Auth {
   createApiToken(email: string, name = 'agent'): string {
     const raw = `sc_${randomToken(24)}`;
     const e = normalizeEmail(email);
-    this.db.prepare('insert into api_tokens (hash, email, name, created_at) values (?, ?, ?, ?)').run(sha256(raw), e, name, this.now());
+    this.db
+      .prepare('insert into api_tokens (hash, id, email, name, created_at) values (?, ?, ?, ?, ?)')
+      .run(sha256(raw), randomId(6), e, name, this.now());
     this.db.prepare('insert or ignore into users (email, created_at) values (?, ?)').run(e, this.now());
     return raw;
   }
@@ -110,6 +113,8 @@ export class Auth {
       | { email: string; last_used: number | null }
       | undefined;
     if (!row) return null;
+    // An email removed from SC_ALLOWED_EMAILS must lose access even on an already-issued token.
+    if (!this.isAllowed(row.email)) return null;
     // "Last used" only needs to be roughly right, and this runs on every single request an
     // agent makes -- including every static asset. Writing it each time put a SQLite write
     // (and a WAL flush) on the hot path for no benefit.
@@ -120,15 +125,21 @@ export class Auth {
     return { email: row.email };
   }
 
-  listApiTokens(email: string): Array<{ name: string; createdAt: number; lastUsed: number | null }> {
+  listApiTokens(email: string): Array<{ id: string | null; name: string; createdAt: number; lastUsed: number | null }> {
     const rows = this.db
-      .prepare('select name, created_at, last_used from api_tokens where email = ? order by created_at desc')
-      .all(normalizeEmail(email)) as Array<{ name: string; created_at: number; last_used: number | null }>;
-    return rows.map((r) => ({ name: r.name, createdAt: r.created_at, lastUsed: r.last_used }));
+      .prepare('select id, name, created_at, last_used from api_tokens where email = ? order by created_at desc')
+      .all(normalizeEmail(email)) as Array<{ id: string | null; name: string; created_at: number; last_used: number | null }>;
+    return rows.map((r) => ({ id: r.id, name: r.name, createdAt: r.created_at, lastUsed: r.last_used }));
   }
 
   revokeApiTokens(email: string): void {
     this.db.prepare('delete from api_tokens where email = ?').run(normalizeEmail(email));
+  }
+
+  /** Revoke one token by its (non-secret) id. Returns true if a token was removed. */
+  revokeApiToken(email: string, id: string): boolean {
+    const r = this.db.prepare('delete from api_tokens where email = ? and id = ?').run(normalizeEmail(email), id);
+    return Number(r.changes) > 0;
   }
 
   /**

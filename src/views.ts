@@ -307,7 +307,7 @@ document.querySelectorAll('form[data-confirm-delete]').forEach(function (f) {
   );
 }
 
-export function renderTokens(user: User, tokens: Array<{ name: string; createdAt: number; lastUsed: number | null }>, fresh?: string): string {
+export function renderTokens(user: User, tokens: Array<{ id: string | null; name: string; createdAt: number; lastUsed: number | null }>, fresh?: string): string {
   const rows = tokens.length
     ? tokens
         .map(
@@ -322,7 +322,7 @@ export function renderTokens(user: User, tokens: Array<{ name: string; createdAt
 <p class="lede">A token lets an agent or the CLI deploy on your behalf. The usual way to get one is <span class="mono">smallcloud login</span>, which approves itself through this browser.</p>
 ${fresh ? `<div class="notice"><strong>Your new token.</strong> Copy it now; it is not shown again.<br><code class="copy" style="margin-top:8px">${escapeHtml(fresh)}</code></div>` : ''}
 <div class="panel">
-<table><thead><tr><th>Name</th><th>Created</th><th>Last used</th></tr></thead><tbody>${rows}</tbody></table>
+<table><thead><tr><th>Name</th><th>Created</th><th>Last used</th><th></th></tr></thead><tbody>${rows}</tbody></table>
 <form method="post" action="/me/tokens" class="row-form" style="margin-top:16px">
   <input type="text" name="name" placeholder="my-laptop" required>
   <button type="submit">Create token</button>

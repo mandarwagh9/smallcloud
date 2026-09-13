@@ -113,7 +113,10 @@ export class Apps {
     if (!manifest || typeof manifest.name !== 'string' || !manifest.name.trim()) throw new DeployError('bad_manifest', 'app.json needs a "name"');
     manifest.name = manifest.name.trim().slice(0, 80);
     manifest.description = typeof manifest.description === 'string' ? manifest.description.trim().slice(0, 500) : '';
-    const hasFrontend = seen.has('public/index.html'); // already lower-case
+    // Check the real (case-preserved) paths, not the case-folded dedup set: the static server
+    // looks up public/index.html case-sensitively on Linux, so a mis-cased file that folds to a
+    // match here would pass validation and then 404 at serve time.
+    const hasFrontend = out.some((f) => f.path === 'public/index.html');
     const hasApi = out.some((f) => f.path.startsWith('api/') && !posix.basename(f.path).startsWith('_'));
     if (!hasFrontend && !hasApi) throw new DeployError('nothing_to_serve', 'bundle needs public/index.html and/or at least one api/<route>.js');
     return { manifest, files: out };

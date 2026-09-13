@@ -43,12 +43,16 @@ export async function handleApi(s: Services, ctx: RequestCtx): Promise<void> {
   }
 
   if (path[0] === 'tokens') {
-    if (method === 'POST') {
+    if (method === 'POST' && path.length === 1) {
       const body = await readJson<{ name?: string }>(ctx.req);
       const token = s.auth.createApiToken(user.email, (body.name ?? 'agent').slice(0, 40));
       return sendJson(res, 201, { token, message: 'store this now; it is not shown again' });
     }
-    if (method === 'GET') return sendJson(res, 200, { tokens: s.auth.listApiTokens(user.email) });
+    if (method === 'GET' && path.length === 1) return sendJson(res, 200, { tokens: s.auth.listApiTokens(user.email) });
+    if (method === 'DELETE' && path.length === 2) {
+      const ok = s.auth.revokeApiToken(user.email, path[1]);
+      return sendJson(res, ok ? 200 : 404, ok ? { revoked: path[1] } : { error: 'not_found', message: `no token with id ${path[1]}` });
+    }
   }
 
   if (path[0] !== 'apps') throw new HttpError(404, 'no_such_endpoint', `${ctx.url.pathname} is not an endpoint; see GET /v1/contract`);

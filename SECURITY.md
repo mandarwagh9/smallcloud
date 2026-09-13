@@ -40,6 +40,10 @@ that app's directory:
 | An app cannot open the platform database through `node:sqlite` **(Node >= 22.15 only)** | `an app cannot read the platform database through node:sqlite` |
 | App/editor SQL cannot ATTACH, DETACH or VACUUM out of the app's own database | `app SQL cannot ATTACH, DETACH or VACUUM out of its own database` |
 | A sign-in link is shown on the page only on a local dev instance | `the sign-in link is shown only on a local dev instance` |
+| ctx.fetch blocks private addresses across encodings and re-checks redirects | `ctx.fetch blocks private addresses across every encoding` |
+| A ctx.log flood is capped and cannot freeze the control plane | `a ctx.log flood is capped and does not freeze the control plane` |
+| ctx.files enforces a per-app storage quota | `ctx.files enforces a per-app storage quota` |
+| API tokens are revocable and allowlist removal evicts | `api tokens can be listed with an id and revoked, and an evicted email loses access` |
 | An app cannot set cookies or platform-wide security headers on the shared origin | `an app cannot set the platform session cookie or other unsafe headers` |
 | A file vanishing mid-stream cannot kill the control plane | `a file vanishing mid-stream does not take the control plane down` |
 | A filesystem grant does not reach a sibling directory with a longer name | `a filesystem grant does not leak into a sibling directory with a longer name` |
@@ -50,7 +54,9 @@ Other controls:
 - **Memory**: each app process gets a 128 MB heap (`--max-old-space-size`).
 - **Authentication**: single-use magic links (15 min), 30-day HttpOnly SameSite=Lax
   session cookies, `Secure` when `SC_BASE_URL` is https. API tokens are stored only as a
-  SHA-256 hash and are revocable.
+  SHA-256 hash and are revocable per-token (`/me/tokens`, `DELETE /v1/tokens/:id`, or
+  `smallcloud tokens rm <id>`). Removing an email from `SC_ALLOWED_EMAILS` evicts its existing
+  tokens and sessions on the next request, not just new sign-ins.
 - **Authorization**: one function, `roleFor()`, decides every access. Its full truth table
   is tested in `test/shares.test.ts`. Administration detail (who else an app is shared with,
   which secret keys exist) is returned only to an owner or editor, never to a plain `user`.
