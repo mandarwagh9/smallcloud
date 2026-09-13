@@ -1,0 +1,79 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<style>
+:root{
+  --paper:#f0ece1; --paper-2:#e7e0cf; --card:#f7f4ec;
+  --ink:#1c1a16; --ink-2:#5c574c; --faint:#8a8474;
+  --line:#d8d0bd; --line-2:#c7bda6;
+  --brand:#d94f27; --brand-ink:#b23c18; --brand-soft:#f3ddd0;
+  --live:#1f6f4f; --live-ink:#175a40; --live-soft:#dce8de;
+  --danger:#8f2d2d;
+  --serif:"Instrument Serif","Iowan Old Style","Palatino Linotype",Georgia,serif;
+  --sans:"Space Grotesk","Segoe UI",system-ui,-apple-system,sans-serif;
+  --mono:"Space Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
+}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--paper);color:var(--ink);font:400 16px/1.6 var(--sans);-webkit-font-smoothing:antialiased;}
+a{color:var(--brand-ink);text-decoration:none;}
+a:hover{text-decoration:underline;text-underline-offset:3px;}
+.wrap{max-width:720px;margin:0 auto;padding:0 44px;}
+.wrap.narrow{max-width:496px;}
+.topbar{display:flex;align-items:center;gap:14px;padding:22px 0 18px;}
+.brand{display:inline-flex;align-items:center;gap:9px;font:500 15px/1 var(--mono);letter-spacing:-.01em;color:var(--ink);}
+.brand:hover{text-decoration:none;}
+.brand .mk{width:17px;height:17px;color:var(--brand);}
+.topbar nav{margin-left:auto;display:flex;align-items:center;gap:20px;font:400 13.5px/1 var(--sans);color:var(--ink-2);}
+.topbar nav .em{color:var(--faint);font-family:var(--mono);font-size:12.5px;}
+.rule{height:1px;background:var(--line);border:0;margin:0;}
+.kicker{display:inline-flex;align-items:center;gap:8px;font:500 12px/1 var(--mono);letter-spacing:.17em;text-transform:uppercase;color:var(--faint);}
+.kicker .tick{width:16px;height:2px;background:var(--brand);display:inline-block;}
+.lockico{width:46px;height:46px;color:var(--brand);}
+h1.mast{font:400 50px/1.0 var(--serif);letter-spacing:-.01em;margin:16px 0 0;}
+.lede{font:400 18px/1.5 var(--sans);color:var(--ink-2);margin:14px 0 0;}
+.lede .mono{font-family:var(--mono);font-size:.9em;color:var(--ink);}
+.ask{background:var(--card);border:1px solid var(--line);border-left:3px solid var(--brand);border-radius:4px;padding:14px 16px;margin:24px 0 0;font:400 13.5px/1.55 var(--sans);color:var(--ink-2);}
+.ask .app{font-family:var(--mono);font-size:.9em;color:var(--ink);}
+.actions{display:flex;gap:12px;margin-top:26px;flex-wrap:wrap;}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:12px 18px;font:500 14.5px/1 var(--sans);border-radius:3px;border:1.5px solid transparent;cursor:pointer;white-space:nowrap;}
+.btn svg{width:15px;height:15px;}
+.btn-primary{background:var(--brand);color:#fbf3ec;}
+.btn-primary:hover{background:var(--brand-ink);text-decoration:none;}
+.btn-ghost{background:transparent;color:var(--ink-2);border-color:var(--line-2);}
+.btn-ghost:hover{border-color:var(--ink);color:var(--ink);text-decoration:none;}
+</style>
+</helmet>
+
+<div style="min-height:600px;">
+  <div class="wrap">
+    <div class="topbar">
+      <a class="brand" href="#"><svg class="mk" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="2.5" width="15" height="15" rx="2"></rect><rect x="6" y="6" width="8" height="8" rx="1" fill="currentColor" stroke="none"></rect></svg>smallcloud</a>
+      <nav><a href="#">apps</a><span class="em">bob@example.com</span><a href="#">sign out</a></nav>
+    </div>
+    <hr class="rule">
+  </div>
+
+  <div class="wrap narrow" style="padding-top:60px;">
+    <svg class="lockico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="4.5" y="10.5" width="15" height="10" rx="2"></rect><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5"></path></svg>
+    <div class="kicker" style="margin-top:20px;"><span class="tick"></span>No access</div>
+    <h1 class="mast">You&#8217;re not on the list.</h1>
+    <p class="lede">You&#8217;re signed in as <span class="mono">bob@example.com</span>, but this app hasn&#8217;t been shared with your account.</p>
+
+    <div class="ask">Ask the owner to share <span class="app">standup</span> with your email &#8212; or, if you own it, sign in with the account you deployed it from.</div>
+
+    <div class="actions">
+      <a class="btn btn-primary" href="#">Go to your apps</a>
+      <a class="btn btn-ghost" href="#">Sign in as someone else</a>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

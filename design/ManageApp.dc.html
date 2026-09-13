@@ -1,0 +1,152 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<style>
+:root{
+  --paper:#f0ece1; --paper-2:#e7e0cf; --card:#f7f4ec;
+  --ink:#1c1a16; --ink-2:#5c574c; --faint:#8a8474;
+  --line:#d8d0bd; --line-2:#c7bda6;
+  --brand:#d94f27; --brand-ink:#b23c18; --brand-soft:#f3ddd0;
+  --live:#1f6f4f; --live-ink:#175a40; --live-soft:#dce8de;
+  --danger:#8f2d2d;
+  --serif:"Instrument Serif","Iowan Old Style","Palatino Linotype",Georgia,serif;
+  --sans:"Space Grotesk","Segoe UI",system-ui,-apple-system,sans-serif;
+  --mono:"Space Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
+}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--paper);color:var(--ink);font:400 16px/1.6 var(--sans);-webkit-font-smoothing:antialiased;}
+a{color:var(--brand-ink);text-decoration:none;}
+a:hover{text-decoration:underline;text-underline-offset:3px;}
+.wrap{max-width:720px;margin:0 auto;padding:0 44px;}
+.topbar{display:flex;align-items:center;gap:14px;padding:22px 0 18px;}
+.brand{display:inline-flex;align-items:center;gap:9px;font:500 15px/1 var(--mono);letter-spacing:-.01em;color:var(--ink);}
+.brand:hover{text-decoration:none;}
+.brand .mk{width:17px;height:17px;color:var(--brand);}
+.topbar nav{margin-left:auto;display:flex;align-items:center;gap:20px;font:400 13.5px/1 var(--sans);color:var(--ink-2);}
+.topbar nav .em{color:var(--faint);font-family:var(--mono);font-size:12.5px;}
+.rule{height:1px;background:var(--line);border:0;margin:0;}
+.crumb{font:400 13px/1 var(--mono);color:var(--faint);letter-spacing:.02em;}
+.crumb a{color:var(--faint);}
+.crumb b{color:var(--ink-2);font-weight:400;}
+h1.mast{font:400 46px/1.0 var(--serif);letter-spacing:-.01em;margin:12px 0 0;display:flex;align-items:center;gap:14px;}
+.livechip{font:500 10.5px/1 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--live-ink);background:var(--live-soft);padding:6px 10px;border-radius:3px;display:inline-flex;align-items:center;gap:6px;position:relative;top:-6px;}
+.livechip .dot{width:7px;height:7px;border-radius:50%;background:var(--live);}
+.lede{font:400 18px/1.5 var(--sans);color:var(--ink-2);margin:10px 0 0;}
+.urlbox{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:5px;padding:13px 15px;font:400 14px/1 var(--mono);margin:22px 0 0;}
+.urlbox a{color:var(--ink);}
+.urlbox .cp{margin-left:auto;color:var(--faint);display:inline-flex;align-items:center;gap:6px;font-size:12px;}
+.urlbox .cp svg{width:14px;height:14px;}
+.meta{font:400 13px/1.5 var(--mono);color:var(--faint);margin:14px 0 0;}
+.seclbl{font:500 12px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--faint);margin:44px 0 14px;display:flex;align-items:center;gap:10px;}
+.seclbl .tick{width:14px;height:2px;background:var(--line-2);display:inline-block;}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:5px;padding:20px 22px;}
+.tbl{width:100%;border-collapse:collapse;font:400 14.5px/1.4 var(--sans);}
+.tbl th{text-align:left;font:500 11px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--faint);padding:0 10px 12px 0;}
+.tbl td{padding:12px 10px 12px 0;border-top:1px solid var(--line);vertical-align:baseline;}
+.tbl td:first-child{font-family:var(--mono);font-size:13.5px;}
+.tbl td.act{text-align:right;}
+label{display:block;font:500 12.5px/1 var(--sans);margin:0 0 7px;color:var(--ink-2);}
+input[type=text],select{width:100%;padding:10px 12px;font:400 14px/1.3 var(--sans);color:var(--ink);background:var(--paper);border:1.5px solid var(--line-2);border-radius:3px;}
+input::placeholder{color:var(--faint);}
+input:focus,select:focus{outline:none;border-color:var(--brand);}
+.row-form{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-top:18px;}
+.row-form .grow{flex:1 1 200px;}
+.row-form .med{flex:0 0 150px;}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 16px;font:500 14px/1 var(--sans);border-radius:3px;border:1.5px solid transparent;cursor:pointer;white-space:nowrap;}
+.btn svg{width:15px;height:15px;}
+.btn-primary{background:var(--brand);color:#fbf3ec;}
+.btn-primary:hover{background:var(--brand-ink);text-decoration:none;}
+.btn-ghost{background:transparent;color:var(--ink);border-color:var(--line-2);}
+.btn-ghost:hover{border-color:var(--ink);text-decoration:none;}
+.btn-danger{background:transparent;color:var(--danger);border-color:var(--line-2);}
+.btn-danger:hover{border-color:var(--danger);text-decoration:none;}
+.keys{font:400 14px/1.8 var(--mono);color:var(--ink);}
+.keys .k{display:inline-block;background:var(--paper);border:1px solid var(--line-2);border-radius:3px;padding:4px 9px;margin:0 6px 6px 0;font-size:13px;}
+pre.logs{background:var(--ink);color:#d7d0c2;border-radius:5px;padding:15px 18px;overflow-x:auto;font:400 12.5px/1.8 var(--mono);margin:0;white-space:pre;}
+pre.logs .t{color:#6f6a5c;}
+pre.logs .err{color:#f0895f;}
+pre.logs .ok{color:#7fc9a6;}
+.dangerbar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:2px;}
+</style>
+</helmet>
+
+<div style="min-height:1500px;">
+  <div class="wrap">
+    <div class="topbar">
+      <a class="brand" href="#"><svg class="mk" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="2.5" width="15" height="15" rx="2"></rect><rect x="6" y="6" width="8" height="8" rx="1" fill="currentColor" stroke="none"></rect></svg>smallcloud</a>
+      <nav>
+        <a href="#">apps</a>
+        <a href="#">tokens</a>
+        <span class="em">bob@example.com</span>
+        <a href="#">sign out</a>
+      </nav>
+    </div>
+    <hr class="rule">
+  </div>
+
+  <div class="wrap" style="padding-top:34px;">
+    <div class="crumb"><a href="#">apps</a> &nbsp;/&nbsp; <b>standup</b></div>
+    <h1 class="mast">Standup Notes <span class="livechip"><span class="dot"></span>live</span></h1>
+    <p class="lede">Async daily standups for the team. Post once, read everyone.</p>
+
+    <div class="urlbox">
+      <a href="#">https://cloud.example.com/a/standup</a>
+      <span class="cp"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="7" y="7" width="10" height="10" rx="2"></rect><path d="M13 7V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path></svg>copy</span>
+    </div>
+    <p class="meta">version 7 &nbsp;&#183;&nbsp; owner bob@example.com &nbsp;&#183;&nbsp; updated 2 hours ago</p>
+
+    <div class="seclbl"><span class="tick"></span>Who can open it</div>
+    <div class="panel">
+      <table class="tbl">
+        <thead><tr><th>Who</th><th>Role</th><th></th></tr></thead>
+        <tbody>
+          <tr><td>alice@example.com</td><td>editor</td><td class="act"><a class="btn btn-danger" href="#" style="padding:6px 12px;">Remove</a></td></tr>
+          <tr><td>domain:acme.com</td><td>user</td><td class="act"><a class="btn btn-danger" href="#" style="padding:6px 12px;">Remove</a></td></tr>
+          <tr><td>carlos@example.com</td><td>user</td><td class="act"><a class="btn btn-danger" href="#" style="padding:6px 12px;">Remove</a></td></tr>
+        </tbody>
+      </table>
+      <div class="row-form">
+        <div class="grow"><label>Add someone</label><input type="text" placeholder="bob@example.com, domain:example.com, or public"></div>
+        <div class="med"><label>Role</label><select><option>user</option><option>editor</option></select></div>
+        <a class="btn btn-primary" href="#">Share</a>
+      </div>
+    </div>
+
+    <div class="seclbl"><span class="tick"></span>Secrets</div>
+    <div class="panel">
+      <div class="keys"><span class="k">RESEND_API_KEY</span><span class="k">SLACK_WEBHOOK</span></div>
+      <p style="color:var(--faint);font-size:13px;margin:10px 0 0;">Values are write&#8209;only. Your app reads them as <span style="font-family:var(--mono);">ctx.env.KEY</span>.</p>
+      <div class="row-form">
+        <div class="grow"><label>Key</label><input type="text" placeholder="API_KEY"></div>
+        <div class="grow"><label>Value</label><input type="text" placeholder="value"></div>
+        <a class="btn btn-primary" href="#">Set</a>
+      </div>
+    </div>
+
+    <div class="seclbl"><span class="tick"></span>Logs</div>
+    <pre class="logs"><span class="t">14:02:11</span>  <span class="ok">GET</span>  /a/standup            200  alice@example.com
+<span class="t">14:02:11</span>  <span class="ok">GET</span>  /api/notes            200  14 rows
+<span class="t">14:07:44</span>  <span class="ok">POST</span> /api/notes            201  carlos@example.com
+<span class="t">14:09:02</span>  <span class="err">ERR</span>  /api/notes  ctx.files.put quota: 200MB reached
+<span class="t">14:11:20</span>  <span class="ok">GET</span>  /a/standup            200  bob@example.com</pre>
+
+    <div class="seclbl"><span class="tick"></span>Export &amp; delete</div>
+    <div class="dangerbar">
+      <a class="btn btn-ghost" href="#">
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M10 3v10M6 9l4 4 4-4M4 16h12"></path></svg>
+        Download everything (.zip)</a>
+      <a class="btn btn-danger" href="#">Delete app</a>
+      <span style="color:var(--faint);font-size:12.5px;">Export gives you source, database and files. Delete cannot be undone.</span>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

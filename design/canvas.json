@@ -1,0 +1,20 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "x": 0, "y": 0, "w": 1200, "h": 2600, "title": "Landing" },
+    { "file": "SignIn.dc.html", "x": 1320, "y": 0, "w": 880, "h": 680, "title": "Sign in" },
+    { "file": "Dashboard.dc.html", "x": 1320, "y": 800, "w": 880, "h": 980, "title": "Your apps" },
+    { "file": "ConnectAgent.dc.html", "x": 1320, "y": 1900, "w": 880, "h": 680, "title": "Connect an agent" },
+    { "file": "ManageApp.dc.html", "x": 1320, "y": 2700, "w": 880, "h": 1640, "title": "Manage app" },
+    { "file": "CheckEmail.dc.html", "x": 2280, "y": 0, "w": 880, "h": 720, "title": "Check your email" },
+    { "file": "Tokens.dc.html", "x": 2280, "y": 840, "w": 880, "h": 900, "title": "Agent tokens" },
+    { "file": "NoAccess.dc.html", "x": 2280, "y": 1860, "w": 880, "h": 680, "title": "No access" },
+    { "file": "AltBlueprint.dc.html", "x": 0, "y": 2720, "w": 940, "h": 940, "title": "Alt B - Blueprint" },
+    { "file": "AltTerminal.dc.html", "x": 0, "y": 3780, "w": 940, "h": 800, "title": "Alt C - Terminal" }
+  ],
+  "annotations": [
+    { "id": "deliverable", "x": 0, "y": -160, "w": 470, "text": "smallcloud web UI - an independent press for software. Eight screens in one bold direction. Static mockups; app names are sample data." },
+    { "id": "alt-b", "x": 1000, "y": 2720, "w": 290, "text": "Direction B - Blueprint. Motivation: reads as a precise engineering schematic, technical and trustworthy. Tradeoff: cooler and less human - the anti-hyperscale warmth is gone." },
+    { "id": "alt-c", "x": 1000, "y": 3780, "w": 290, "text": "Direction C - Terminal. Motivation: literal to how the product is used, CLI and agent first. Tradeoff: dark-CRT is a crowded cliche and can feel unwelcoming to a first-time recipient." }
+  ],
+  "launch": { "view": "canvas" }
+}
