@@ -1,0 +1,113 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<style>
+:root{
+  --paper:#f0ece1; --paper-2:#e7e0cf; --card:#f7f4ec;
+  --ink:#1c1a16; --ink-2:#5c574c; --faint:#8a8474;
+  --line:#d8d0bd; --line-2:#c7bda6;
+  --brand:#d94f27; --brand-ink:#b23c18; --brand-soft:#f3ddd0;
+  --live:#1f6f4f; --live-ink:#175a40; --live-soft:#dce8de;
+  --danger:#8f2d2d;
+  --serif:"Instrument Serif","Iowan Old Style","Palatino Linotype",Georgia,serif;
+  --sans:"Space Grotesk","Segoe UI",system-ui,-apple-system,sans-serif;
+  --mono:"Space Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
+}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--paper);color:var(--ink);font:400 16px/1.6 var(--sans);-webkit-font-smoothing:antialiased;}
+a{color:var(--brand-ink);text-decoration:none;}
+a:hover{text-decoration:underline;text-underline-offset:3px;}
+.wrap{max-width:720px;margin:0 auto;padding:0 44px;}
+.topbar{display:flex;align-items:center;gap:14px;padding:22px 0 18px;}
+.brand{display:inline-flex;align-items:center;gap:9px;font:500 15px/1 var(--mono);letter-spacing:-.01em;color:var(--ink);}
+.brand:hover{text-decoration:none;}
+.brand .mk{width:17px;height:17px;color:var(--brand);}
+.topbar nav{margin-left:auto;display:flex;align-items:center;gap:20px;font:400 13.5px/1 var(--sans);color:var(--ink-2);}
+.topbar nav a[aria-current]{color:var(--ink);text-decoration:underline;text-underline-offset:4px;text-decoration-color:var(--brand);}
+.topbar nav .em{color:var(--faint);font-family:var(--mono);font-size:12.5px;}
+.rule{height:1px;background:var(--line);border:0;margin:0;}
+.kicker{display:inline-flex;align-items:center;gap:8px;font:500 12px/1 var(--mono);letter-spacing:.17em;text-transform:uppercase;color:var(--faint);}
+.kicker .tick{width:16px;height:2px;background:var(--brand);display:inline-block;}
+h1.mast{font:400 46px/1.0 var(--serif);letter-spacing:-.01em;margin:14px 0 0;}
+.lede{font:400 18px/1.5 var(--sans);color:var(--ink-2);margin:12px 0 0;max-width:52ch;}
+.lede .mono{font-family:var(--mono);font-size:.9em;color:var(--ink);}
+.notice{border:1px solid var(--line-2);border-left:3px solid var(--live);background:var(--card);border-radius:4px;padding:15px 17px;margin:28px 0 0;}
+.notice .h{font:500 11.5px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--live-ink);}
+.notice .sub{font-size:13.5px;color:var(--ink-2);margin:6px 0 0;}
+.notice .tok{display:flex;align-items:center;gap:12px;background:var(--ink);color:#e9e2d4;border-radius:4px;padding:12px 14px;margin:12px 0 0;font:400 13.5px/1 var(--mono);}
+.notice .tok .cp{margin-left:auto;color:#8f897a;font-size:12px;}
+.seclbl{font:500 12px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--faint);margin:40px 0 14px;display:flex;align-items:center;gap:10px;}
+.seclbl .tick{width:14px;height:2px;background:var(--line-2);display:inline-block;}
+.panel{background:var(--card);border:1px solid var(--line);border-radius:5px;padding:20px 22px;}
+.tbl{width:100%;border-collapse:collapse;font:400 14.5px/1.4 var(--sans);}
+.tbl th{text-align:left;font:500 11px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--faint);padding:0 10px 12px 0;}
+.tbl td{padding:13px 10px 13px 0;border-top:1px solid var(--line);vertical-align:baseline;}
+.tbl td:first-child{font-family:var(--mono);font-size:13.5px;color:var(--ink);}
+.tbl td.dim{color:var(--faint);font-size:13px;}
+.tbl td.act{text-align:right;}
+label{display:block;font:500 12.5px/1 var(--sans);margin:0 0 7px;color:var(--ink-2);}
+input[type=text]{width:100%;padding:10px 12px;font:400 14px/1.3 var(--sans);color:var(--ink);background:var(--paper);border:1.5px solid var(--line-2);border-radius:3px;}
+input::placeholder{color:var(--faint);}
+input:focus{outline:none;border-color:var(--brand);}
+.row-form{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin-top:18px;}
+.row-form .grow{flex:1 1 220px;}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:10px 16px;font:500 14px/1 var(--sans);border-radius:3px;border:1.5px solid transparent;cursor:pointer;white-space:nowrap;}
+.btn-primary{background:var(--brand);color:#fbf3ec;}
+.btn-primary:hover{background:var(--brand-ink);text-decoration:none;}
+.btn-danger{background:transparent;color:var(--danger);border-color:var(--line-2);}
+.btn-danger:hover{border-color:var(--danger);text-decoration:none;}
+</style>
+</helmet>
+
+<div style="min-height:800px;">
+  <div class="wrap">
+    <div class="topbar">
+      <a class="brand" href="#"><svg class="mk" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="2.5" width="15" height="15" rx="2"></rect><rect x="6" y="6" width="8" height="8" rx="1" fill="currentColor" stroke="none"></rect></svg>smallcloud</a>
+      <nav>
+        <a href="#">apps</a>
+        <a href="#" aria-current="page">tokens</a>
+        <span class="em">bob@example.com</span>
+        <a href="#">sign out</a>
+      </nav>
+    </div>
+    <hr class="rule">
+  </div>
+
+  <div class="wrap" style="padding-top:40px;">
+    <div class="kicker"><span class="tick"></span>Agent tokens</div>
+    <h1 class="mast">Agent tokens.</h1>
+    <p class="lede">A token lets an agent or the CLI deploy on your behalf. The usual way to get one is <span class="mono">smallcloud login</span>, which approves itself through this browser.</p>
+
+    <div class="notice">
+      <span class="h">Your new token</span>
+      <div class="sub">Copy it now &#8212; it is not shown again.</div>
+      <div class="tok"><span>sc_REDACTED</span><span class="cp">copy</span></div>
+    </div>
+
+    <div class="seclbl"><span class="tick"></span>Active tokens</div>
+    <div class="panel">
+      <table class="tbl">
+        <thead><tr><th>Name</th><th>Created</th><th>Last used</th><th></th></tr></thead>
+        <tbody>
+          <tr><td>my-laptop</td><td class="dim">Mar 3, 2026</td><td class="dim">2 hours ago</td><td class="act"><a class="btn btn-danger" href="#" style="padding:6px 12px;">Revoke</a></td></tr>
+          <tr><td>ci-runner</td><td class="dim">Feb 18, 2026</td><td class="dim">yesterday</td><td class="act"><a class="btn btn-danger" href="#" style="padding:6px 12px;">Revoke</a></td></tr>
+          <tr><td>old-macbook</td><td class="dim">Jan 4, 2026</td><td class="dim">never used</td><td class="act"><a class="btn btn-danger" href="#" style="padding:6px 12px;">Revoke</a></td></tr>
+        </tbody>
+      </table>
+      <div class="row-form">
+        <div class="grow"><label>New token name</label><input type="text" placeholder="my-laptop"></div>
+        <a class="btn btn-primary" href="#">Create token</a>
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

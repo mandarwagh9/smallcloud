@@ -1,0 +1,78 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<style>
+:root{
+  --pp:#eef0ec; --ink:#182420; --cyan:#0d7d8c; --line:#c3ccc7; --faint:#7d8a84;
+  --mono:"Space Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
+}
+*{box-sizing:border-box;}
+a{color:var(--cyan);text-decoration:none;}
+a:hover{text-decoration:underline;}
+body{margin:0;color:var(--ink);font:400 13px/1.6 var(--mono);
+  background:var(--pp);
+  background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);
+  background-size:26px 26px;background-position:-1px -1px;}
+.sheet{padding:34px 40px;min-height:900px;position:relative;}
+.tblk{position:absolute;top:22px;right:26px;border:1.5px solid var(--ink);background:var(--pp);font-size:10px;letter-spacing:.06em;}
+.tblk .t{padding:5px 10px;border-bottom:1px solid var(--ink);text-transform:uppercase;color:var(--cyan);}
+.tblk .b{padding:5px 10px;color:var(--faint);}
+.tag{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--cyan);border:1px solid var(--cyan);display:inline-block;padding:4px 8px;}
+.dim{color:var(--faint);font-size:10px;letter-spacing:.12em;text-transform:uppercase;margin:0 0 6px;}
+.box{border:1.5px dashed var(--faint);padding:16px 18px;margin:14px 0;}
+.box.solid{border-style:solid;border-color:var(--ink);}
+.h{font-size:38px;line-height:1.05;color:var(--ink);margin:6px 0 0;max-width:16ch;}
+.h .u{border-bottom:3px solid var(--cyan);}
+.sub{color:var(--faint);max-width:52ch;margin:12px 0 0;font-size:12px;}
+.ph{color:var(--faint);}
+.btnw{display:inline-block;border:1.5px solid var(--ink);background:var(--cyan);color:var(--pp);padding:8px 14px;font-size:11px;letter-spacing:.06em;text-transform:uppercase;margin-top:14px;}
+.row{display:flex;gap:14px;}
+.row>*{flex:1;}
+.ln{border-top:1px solid var(--faint);margin:8px 0;position:relative;}
+.ln::before,.ln::after{content:"";position:absolute;top:-3px;width:1px;height:7px;background:var(--faint);}
+.ln::before{left:0;} .ln::after{right:0;}
+</style>
+</helmet>
+
+<div class="sheet">
+  <div class="tblk"><div class="t">Direction B</div><div class="b">Blueprint &#183; landing</div></div>
+  <span class="tag">Alt &#183; low-fi</span>
+
+  <div style="margin-top:20px;">
+    <div class="dim">&#8592; 640 units &#8594;</div>
+    <div class="ln"></div>
+  </div>
+
+  <div class="box" style="margin-top:16px;">
+    <div class="dim">Fig. 1 &#8212; hero</div>
+    <div style="font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);">smallcloud &#8212; self&#8209;hosted</div>
+    <h1 class="h">A cloud for <span class="u">small software</span>.</h1>
+    <p class="sub">Agent hands the server a folder &#8594; a link comes back. Hosting, database, files, sign&#8209;in, sharing included. [placeholder copy]</p>
+    <span class="btnw">Sign in &#8594;</span>
+  </div>
+
+  <div class="box">
+    <div class="dim">Fig. 2 &#8212; deploy transcript</div>
+    <div class="ph">$ npx smallcloud login &#8230;<br>$ npx smallcloud deploy ./standup<br>&nbsp;&nbsp;&#8594; cloud.example.com/a/standup</div>
+  </div>
+
+  <div class="row">
+    <div class="box"><div class="dim">Fig. 3 &#8212; what an app is</div><div class="ph">app.json<br>public/&#8230;<br>api/&#8230;.js</div></div>
+    <div class="box"><div class="dim">Fig. 4 &#8212; sharing matrix</div><div class="ph">email &#8594; one person<br>domain: &#8594; a company<br>public &#8594; anyone</div></div>
+  </div>
+
+  <div class="box solid">
+    <div class="dim">Notes</div>
+    <div style="font-size:11.5px;color:var(--ink);">Everything as a technical drawing: mono lettering, dimension lines, dashed construction boxes, one cyan accent. Precise, engineered, trustworthy.</div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

@@ -1,0 +1,127 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<style>
+:root{
+  --paper:#f0ece1; --paper-2:#e7e0cf; --card:#f7f4ec;
+  --ink:#1c1a16; --ink-2:#5c574c; --faint:#8a8474;
+  --line:#d8d0bd; --line-2:#c7bda6;
+  --brand:#d94f27; --brand-ink:#b23c18; --brand-soft:#f3ddd0;
+  --live:#1f6f4f; --live-ink:#175a40; --live-soft:#dce8de;
+  --danger:#8f2d2d;
+  --serif:"Instrument Serif","Iowan Old Style","Palatino Linotype",Georgia,serif;
+  --sans:"Space Grotesk","Segoe UI",system-ui,-apple-system,sans-serif;
+  --mono:"Space Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
+}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--paper);color:var(--ink);font:400 16px/1.6 var(--sans);-webkit-font-smoothing:antialiased;}
+a{color:var(--brand-ink);text-decoration:none;}
+a:hover{text-decoration:underline;text-underline-offset:3px;}
+.wrap{max-width:720px;margin:0 auto;padding:0 44px;}
+.topbar{display:flex;align-items:center;gap:14px;padding:22px 0 18px;}
+.brand{display:inline-flex;align-items:center;gap:9px;font:500 15px/1 var(--mono);letter-spacing:-.01em;color:var(--ink);}
+.brand:hover{text-decoration:none;}
+.brand .mk{width:17px;height:17px;color:var(--brand);}
+.topbar nav{margin-left:auto;display:flex;align-items:center;gap:20px;font:400 13.5px/1 var(--sans);color:var(--ink-2);}
+.topbar nav a[aria-current]{color:var(--ink);text-decoration:underline;text-underline-offset:4px;text-decoration-color:var(--brand);}
+.topbar nav .em{color:var(--faint);font-family:var(--mono);font-size:12.5px;}
+.rule{height:1px;background:var(--line);border:0;margin:0;}
+.kicker{display:inline-flex;align-items:center;gap:8px;font:500 12px/1 var(--mono);letter-spacing:.17em;text-transform:uppercase;color:var(--faint);}
+.kicker .tick{width:16px;height:2px;background:var(--brand);display:inline-block;}
+h1.mast{font:400 46px/1.0 var(--serif);letter-spacing:-.01em;margin:14px 0 0;}
+.lede{font:400 18px/1.5 var(--sans);color:var(--ink-2);margin:12px 0 0;}
+.toolbar{display:flex;align-items:baseline;gap:12px;margin:34px 0 0;}
+.toolbar .count{font:400 13px/1 var(--mono);color:var(--faint);letter-spacing:.04em;}
+.toolbar .hint{margin-left:auto;font:400 12.5px/1 var(--mono);color:var(--faint);}
+.toolbar .hint b{color:var(--ink-2);font-weight:400;}
+.ledger{list-style:none;margin:14px 0 0;padding:0;border-top:1.5px solid var(--ink);}
+.ledger li{display:flex;align-items:center;gap:14px;padding:17px 2px;border-bottom:1px solid var(--line);}
+.ledger .nm{font:400 18px/1.2 var(--sans);color:var(--ink);}
+.ledger .nm a{color:var(--ink);}
+.ledger .slug{font:400 12.5px/1 var(--mono);color:var(--faint);}
+.ledger .right{margin-left:auto;display:flex;align-items:center;gap:18px;font:400 13px/1 var(--sans);color:var(--ink-2);}
+.ledger .ver{font-family:var(--mono);font-size:12px;color:var(--faint);}
+.tag{display:inline-flex;align-items:center;gap:6px;font:500 10.5px/1 var(--mono);letter-spacing:.09em;text-transform:uppercase;padding:5px 9px;border-radius:3px;}
+.tag-live{background:var(--live-soft);color:var(--live-ink);}
+.tag-share{background:var(--brand-soft);color:var(--brand-ink);}
+.tag-muted{color:var(--faint);border:1px solid var(--line-2);}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--live);}
+footer.pg{border-top:1.5px solid var(--ink);margin-top:44px;padding:20px 0 40px;display:flex;gap:14px;align-items:baseline;font:400 12.5px/1.5 var(--sans);color:var(--faint);}
+footer.pg .brand{font-size:12.5px;color:var(--faint);}
+footer.pg .brand .mk{color:var(--faint);}
+</style>
+</helmet>
+
+<div style="min-height:900px;">
+  <div class="wrap">
+    <div class="topbar">
+      <a class="brand" href="#"><svg class="mk" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="2.5" width="15" height="15" rx="2"></rect><rect x="6" y="6" width="8" height="8" rx="1" fill="currentColor" stroke="none"></rect></svg>smallcloud</a>
+      <nav>
+        <a href="#" aria-current="page">apps</a>
+        <a href="#">tokens</a>
+        <span class="em">bob@example.com</span>
+        <a href="#">sign out</a>
+      </nav>
+    </div>
+    <hr class="rule">
+  </div>
+
+  <div class="wrap" style="padding-top:40px;">
+    <div class="kicker"><span class="tick"></span>Your apps</div>
+    <h1 class="mast">Your apps.</h1>
+    <p class="lede">Everything you own or that has been shared with you.</p>
+
+    <div class="toolbar">
+      <span class="count">5 apps</span>
+      <span class="hint">deploy another &#8212; <b>smallcloud deploy ./app</b></span>
+    </div>
+
+    <ul class="ledger">
+      <li>
+        <span class="dot"></span>
+        <span class="nm"><a href="#">Standup Notes</a></span>
+        <span class="slug">/a/standup</span>
+        <span class="right"><span class="tag tag-share">shared &#215;3</span><span class="ver">v7</span><a href="#">manage</a></span>
+      </li>
+      <li>
+        <span class="dot"></span>
+        <span class="nm"><a href="#">Book Club</a></span>
+        <span class="slug">/a/book-club</span>
+        <span class="right"><span class="tag tag-live">public</span><span class="ver">v3</span><a href="#">manage</a></span>
+      </li>
+      <li>
+        <span class="dot"></span>
+        <span class="nm"><a href="#">Invoice Tracker</a></span>
+        <span class="slug">/a/invoices</span>
+        <span class="right"><span class="tag tag-muted">private</span><span class="ver">v21</span><a href="#">manage</a></span>
+      </li>
+      <li>
+        <span class="dot"></span>
+        <span class="nm"><a href="#">Office Plants</a></span>
+        <span class="slug">/a/plants</span>
+        <span class="right"><span class="tag tag-share">shared &#215;8</span><span class="ver">v2</span><a href="#">manage</a></span>
+      </li>
+      <li>
+        <span class="dot" style="background:var(--faint);"></span>
+        <span class="nm"><a href="#">Retro Board</a></span>
+        <span class="slug">/a/retro</span>
+        <span class="right"><span class="tag tag-muted">shared with you</span><span class="ver">v4</span><a href="#">open</a></span>
+      </li>
+    </ul>
+
+    <footer class="pg">
+      <a class="brand" href="#"><svg class="mk" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="2.5" width="15" height="15" rx="2"></rect><rect x="6" y="6" width="8" height="8" rx="1" fill="currentColor" stroke="none"></rect></svg>smallcloud</a>
+      <span style="margin-left:auto;"><a href="#">the app contract</a></span>
+    </footer>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

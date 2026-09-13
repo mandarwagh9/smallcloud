@@ -1,0 +1,74 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<style>
+:root{
+  --paper:#f0ece1; --paper-2:#e7e0cf; --card:#f7f4ec;
+  --ink:#1c1a16; --ink-2:#5c574c; --faint:#8a8474;
+  --line:#d8d0bd; --line-2:#c7bda6;
+  --brand:#d94f27; --brand-ink:#b23c18; --brand-soft:#f3ddd0;
+  --live:#1f6f4f; --live-ink:#175a40; --live-soft:#dce8de;
+  --danger:#8f2d2d;
+  --serif:"Instrument Serif","Iowan Old Style","Palatino Linotype",Georgia,serif;
+  --sans:"Space Grotesk","Segoe UI",system-ui,-apple-system,sans-serif;
+  --mono:"Space Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
+}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--paper);color:var(--ink);font:400 16px/1.6 var(--sans);-webkit-font-smoothing:antialiased;}
+a{color:var(--brand-ink);text-decoration:none;}
+a:hover{text-decoration:underline;text-underline-offset:3px;}
+.wrap{max-width:720px;margin:0 auto;padding:0 44px;}
+.wrap.narrow{max-width:496px;}
+.topbar{display:flex;align-items:center;gap:14px;padding:22px 0 18px;}
+.brand{display:inline-flex;align-items:center;gap:9px;font:500 15px/1 var(--mono);letter-spacing:-.01em;color:var(--ink);}
+.brand:hover{text-decoration:none;}
+.brand .mk{width:17px;height:17px;color:var(--brand);}
+.topbar nav{margin-left:auto;display:flex;align-items:center;gap:20px;font:400 13.5px/1 var(--sans);}
+.rule{height:1px;background:var(--line);border:0;margin:0;}
+.kicker{display:inline-flex;align-items:center;gap:8px;font:500 12px/1 var(--mono);letter-spacing:.17em;text-transform:uppercase;color:var(--faint);}
+.kicker .tick{width:16px;height:2px;background:var(--brand);display:inline-block;}
+h1.mast{font:400 50px/1.0 var(--serif);letter-spacing:-.01em;margin:16px 0 0;}
+.lede{font:400 19px/1.5 var(--sans);color:var(--ink-2);margin:14px 0 0;}
+.mono{font-family:var(--mono);font-size:.92em;color:var(--ink);}
+.envelope{width:52px;height:52px;color:var(--brand);}
+.notice{border:1px solid var(--line-2);border-left:3px solid var(--live);background:var(--card);border-radius:4px;padding:15px 17px;font-size:14px;margin:32px 0 0;color:var(--ink-2);}
+.notice .h{font-weight:500;color:var(--ink);font-family:var(--mono);font-size:11.5px;letter-spacing:.12em;text-transform:uppercase;}
+.notice .lk{display:block;margin-top:10px;font-family:var(--mono);font-size:13px;color:var(--brand-ink);word-break:break-all;line-height:1.5;}
+.resend{font:400 13.5px/1.5 var(--sans);color:var(--faint);margin:24px 0 0;}
+</style>
+</helmet>
+
+<div style="min-height:640px;">
+  <div class="wrap">
+    <div class="topbar">
+      <a class="brand" href="#"><svg class="mk" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="2.5" width="15" height="15" rx="2"></rect><rect x="6" y="6" width="8" height="8" rx="1" fill="currentColor" stroke="none"></rect></svg>smallcloud</a>
+      <nav><a href="#">the app contract</a></nav>
+    </div>
+    <hr class="rule">
+  </div>
+
+  <div class="wrap narrow" style="padding-top:68px;">
+    <svg class="envelope" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2.5" y="4.5" width="19" height="15" rx="2"></rect><path d="M3 6l9 6 9-6"></path></svg>
+    <div class="kicker" style="margin-top:22px;"><span class="tick"></span>Check your email</div>
+    <h1 class="mast">Check your email.</h1>
+    <p class="lede">We sent a sign&#8209;in link to <span class="mono">bob@example.com</span>. It works once and expires in 15 minutes.</p>
+
+    <div class="notice">
+      <span class="h">Development mode</span>
+      <div style="margin-top:6px;">No email provider is configured, so the link is shown here.</div>
+      <a class="lk" href="#">https://cloud.example.com/auth/verify?token=8f3c1a9e&#8230;</a>
+    </div>
+
+    <p class="resend">Didn&#8217;t get it? <a href="#">Send another link</a> &#183; <a href="#">use a different email</a></p>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

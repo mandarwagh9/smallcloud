@@ -1,0 +1,180 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<style>
+:root{
+  --paper:#f0ece1; --paper-2:#e7e0cf; --card:#f7f4ec;
+  --ink:#1c1a16; --ink-2:#5c574c; --faint:#8a8474;
+  --line:#d8d0bd; --line-2:#c7bda6;
+  --brand:#d94f27; --brand-ink:#b23c18; --brand-soft:#f3ddd0;
+  --live:#1f6f4f; --live-ink:#175a40; --live-soft:#dce8de;
+  --danger:#8f2d2d;
+  --serif:"Instrument Serif","Iowan Old Style","Palatino Linotype",Georgia,serif;
+  --sans:"Space Grotesk","Segoe UI",system-ui,-apple-system,sans-serif;
+  --mono:"Space Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
+}
+*{box-sizing:border-box;}
+body{margin:0;background:var(--paper);color:var(--ink);font:400 16px/1.6 var(--sans);-webkit-font-smoothing:antialiased;}
+a{color:var(--brand-ink);text-decoration:none;}
+a:hover{text-decoration:underline;text-underline-offset:3px;}
+.wrap{max-width:1000px;margin:0 auto;padding:0 48px;}
+.kicker{font:500 12px/1 var(--mono);letter-spacing:.17em;text-transform:uppercase;color:var(--faint);}
+.kicker b{color:var(--brand-ink);font-weight:500;}
+.rule{height:1px;background:var(--line);border:0;margin:0;}
+.rule-ink{height:2px;background:var(--ink);border:0;margin:0;width:52px;}
+h1.mast{font:400 76px/0.98 var(--serif);letter-spacing:-.01em;margin:18px 0 0;max-width:12ch;}
+.lede{font:400 21px/1.5 var(--sans);color:var(--ink-2);max-width:44ch;margin:22px 0 0;}
+h2.sec{font:400 34px/1.05 var(--serif);margin:0 0 4px;letter-spacing:-.01em;}
+.btn{display:inline-flex;align-items:center;gap:9px;padding:12px 18px;font:500 15px/1 var(--sans);border-radius:3px;border:1.5px solid transparent;cursor:pointer;}
+.btn svg{width:16px;height:16px;}
+.btn-primary{background:var(--brand);color:#fbf3ec;}
+.btn-primary:hover{background:var(--brand-ink);text-decoration:none;}
+.btn-ghost{background:transparent;color:var(--ink);border-color:var(--line-2);}
+.btn-ghost:hover{border-color:var(--ink);text-decoration:none;}
+.topbar{display:flex;align-items:center;gap:14px;padding:22px 0 20px;}
+.brand{display:inline-flex;align-items:center;gap:9px;font:500 16px/1 var(--mono);letter-spacing:-.01em;color:var(--ink);}
+.brand:hover{text-decoration:none;}
+.brand .mk{width:18px;height:18px;color:var(--brand);}
+.topbar nav{margin-left:auto;display:flex;align-items:center;gap:22px;font:400 14px/1 var(--sans);}
+.term{background:var(--ink);color:#e9e2d4;border-radius:5px;font:400 14px/1.85 var(--mono);overflow-x:auto;}
+.term .head{display:flex;align-items:center;gap:7px;padding:11px 14px;border-bottom:1px solid #333029;}
+.term .dot{width:9px;height:9px;border-radius:50%;background:#4a463d;}
+.term .lbl{margin-left:8px;font:500 11px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:#8f897a;}
+.term pre{margin:0;padding:16px 18px;white-space:pre;}
+.term .c{color:#8f897a;}
+.term .g{color:#7fc9a6;}
+.term .o{color:#f0895f;}
+.code{background:var(--card);border:1px solid var(--line);border-radius:5px;font:400 13.5px/1.8 var(--mono);color:var(--ink);white-space:pre;overflow-x:auto;padding:15px 17px;margin:0;}
+.code .c{color:var(--faint);}
+.share{width:100%;border-collapse:collapse;}
+.share td{padding:14px 4px;border-top:1px solid var(--line);vertical-align:baseline;}
+.share tr:first-child td{border-top:0;}
+.share .who{font:400 15px/1.4 var(--mono);color:var(--ink);width:44%;}
+.share .get{color:var(--ink-2);}
+.nots{list-style:none;margin:0;padding:0;}
+.nots li{display:flex;gap:13px;align-items:baseline;padding:12px 0;border-top:1px solid var(--line);}
+.nots li:first-child{border-top:0;}
+.nots .no{font:400 15px/1 var(--mono);color:var(--brand-ink);flex:0 0 auto;}
+footer.pg{border-top:2px solid var(--ink);margin-top:0;padding:22px 0 40px;display:flex;gap:16px;align-items:baseline;font:400 13px/1.5 var(--sans);color:var(--ink-2);}
+footer.pg .brand{font-size:13px;}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:34px;}
+.blk{padding:60px 0;}
+.blk-line{border-top:1px solid var(--line);}
+</style>
+</helmet>
+
+<div style="min-height:1900px;">
+  <div class="wrap">
+    <div class="topbar">
+      <a class="brand" href="#"><svg class="mk" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="2.5" width="15" height="15" rx="2"></rect><rect x="6" y="6" width="8" height="8" rx="1" fill="currentColor" stroke="none"></rect></svg>smallcloud</a>
+      <nav>
+        <a href="#">the app contract</a>
+        <a class="btn btn-primary" href="#" style="padding:9px 15px;">Sign in</a>
+      </nav>
+    </div>
+    <hr class="rule">
+  </div>
+
+  <div class="wrap blk" style="padding-top:70px;padding-bottom:18px;">
+    <div class="kicker">Self&#8209;hosted &nbsp;&#183;&nbsp; <b>run it yourself</b> &nbsp;&#183;&nbsp; for software with a few users</div>
+    <h1 class="mast">A cloud for small software.</h1>
+    <p class="lede">Your agent hands this server a folder. It hands back a link you can send to someone. Hosting, a database, file storage, sign&#8209;in and sharing are already there.</p>
+    <div style="display:flex;gap:12px;margin-top:30px;flex-wrap:wrap;">
+      <a class="btn btn-primary" href="#">Sign in with your email
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 10h11M11 6l4 4-4 4"></path></svg></a>
+      <a class="btn btn-ghost" href="#">Read the app contract</a>
+    </div>
+  </div>
+
+  <div class="wrap" style="padding-bottom:64px;">
+    <div class="term">
+      <div class="head"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="lbl">terminal</span></div>
+<pre><span class="c"># three lines from folder to a link you can send</span>
+npx smallcloud login https://cloud.example.com
+npx smallcloud deploy ./standup
+<span class="c">#</span> <span class="o">&#8594;</span> <span class="g">https://cloud.example.com/a/standup</span>
+npx smallcloud share standup <span class="g">bob@example.com</span></pre>
+    </div>
+  </div>
+
+  <div class="blk blk-line">
+    <div class="wrap grid2">
+      <div>
+        <div class="kicker" style="margin-bottom:16px;">01 &nbsp;/&nbsp; What an app is</div>
+        <h2 class="sec">A folder. Nothing to<br>provision.</h2>
+        <p style="color:var(--ink-2);margin:18px 0 0;max-width:38ch;">No Dockerfile, no database to spin up, no auth library, no environment to wire. Three things, and the platform supplies the rest through one <span style="font-family:var(--mono);font-size:.9em;">ctx</span> object.</p>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:16px;">
+<pre class="code">standup/
+  app.json            <span class="c">{"name": "Standup Notes"}</span>
+  public/index.html   <span class="c">the frontend</span>
+  api/notes.js        <span class="c">one file per route</span></pre>
+<pre class="code"><span class="c">// api/notes.js</span>
+export default (req, ctx) =&gt; ({
+  json: ctx.db.all(
+    'select * from notes order by id desc'
+  )
+})</pre>
+      </div>
+    </div>
+  </div>
+
+  <div class="blk blk-line">
+    <div class="wrap grid2">
+      <div>
+        <div class="kicker" style="margin-bottom:16px;">02 &nbsp;/&nbsp; Sharing</div>
+        <h2 class="sec">Send a link. They<br>sign in with email.</h2>
+        <p style="color:var(--ink-2);margin:18px 0 0;max-width:36ch;">Your app sees whoever opened it as <span style="font-family:var(--mono);font-size:.9em;">ctx.user.email</span>. Roles are <span style="font-family:var(--mono);font-size:.9em;">user</span> and <span style="font-family:var(--mono);font-size:.9em;">editor</span>.</p>
+      </div>
+      <div>
+        <table class="share">
+          <tr><td class="who">bob@example.com</td><td class="get">just Bob, after he signs in</td></tr>
+          <tr><td class="who">domain:acme.com</td><td class="get">anyone with an email at that domain</td></tr>
+          <tr><td class="who">public</td><td class="get">anyone with the link, no sign&#8209;in</td></tr>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="blk blk-line">
+    <div class="wrap">
+      <div class="kicker" style="margin-bottom:16px;">03 &nbsp;/&nbsp; What it deliberately is not</div>
+      <div class="grid2" style="align-items:start;gap:44px;">
+        <h2 class="sec" style="max-width:14ch;">Honest about its edges.</h2>
+        <ul class="nots">
+          <li><span class="no">no</span><span>Not a scale&#8209;out cloud. It is for software that will only ever have a few users.</span></li>
+          <li><span class="no">no</span><span>Not a place to let strangers deploy code. Open it only to people you would hand a shell.</span></li>
+          <li><span class="no">no</span><span>Not a code generator, and not a no&#8209;code builder. It is the deploy&#8209;and&#8209;share layer.</span></li>
+          <li><span class="no">no</span><span>No lock&#8209;in. <span style="font-family:var(--mono);font-size:.9em;">smallcloud export</span> hands back your source, database and files.</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="blk blk-line" style="padding:64px 0;">
+    <div class="wrap" style="text-align:center;">
+      <div class="kicker">Get in</div>
+      <h2 class="sec" style="font-size:44px;margin:14px 0 24px;">Point your agent at it and ask for a tool.</h2>
+      <a class="btn btn-primary" href="#" style="padding:14px 22px;font-size:16px;">Sign in with your email
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 10h11M11 6l4 4-4 4"></path></svg></a>
+    </div>
+  </div>
+
+  <div class="wrap">
+    <footer class="pg">
+      <a class="brand" href="#" style="color:var(--ink-2);"><svg class="mk" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" style="color:var(--faint);"><rect x="2.5" y="2.5" width="15" height="15" rx="2"></rect><rect x="6" y="6" width="8" height="8" rx="1" fill="currentColor" stroke="none"></rect></svg>smallcloud</a>
+      <span>a cloud for small software</span>
+      <span style="margin-left:auto;"><a href="#">the app contract</a></span>
+    </footer>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>
