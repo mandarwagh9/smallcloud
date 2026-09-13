@@ -204,11 +204,12 @@ async function exportEntries(s: Services, app: AppRecord): Promise<Array<{ path:
   const paths = s.apps.paths(app.id);
   // A unique name per request: two exports at once would otherwise fight over one path, and
   // VACUUM INTO refuses to overwrite, so the loser silently shipped the un-checkpointed file.
-  const snapshot = join(paths.data, `export-snapshot-${randomId(6)}.db`);
+  const snapshotName = `export-snapshot-${randomId(6)}.db`;
+  const snapshot = join(paths.data, snapshotName);
 
   let data: Buffer | null = null;
   try {
-    await s.runtime.sql(app.id, `vacuum into '${snapshot.split("'").join("''")}'`, [], { internal: true });
+    await s.runtime.snapshot(app.id, snapshotName);
     data = readFileSync(snapshot);
   } catch (err) {
     // An app that has never been deployed has no process to snapshot through; that is the

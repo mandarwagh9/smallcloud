@@ -75,7 +75,7 @@ export function createServices(cfg: Config, mailer?: Mailer): Services {
     limiters: {
       login: new RateLimiter(5, 15 * 60_000),
       loginIp: new RateLimiter(20, 15 * 60_000),
-      deploy: new RateLimiter(30, 60 * 60_000),
+      deploy: new RateLimiter(cfg.deployPerHour, 60 * 60_000),
       // Per app, per client IP. These match the capacity targets in docs/PLAN.md NF2 on
       // purpose: a limit below the throughput the platform claims to support would reject
       // traffic the box can serve. A page view is several requests, and a whole office can
@@ -131,7 +131,12 @@ async function serveApp(s: Services, ctx: RequestCtx): Promise<void> {
   const { res, url } = ctx;
   const rest = url.pathname.slice('/a/'.length);
   const slash = rest.indexOf('/');
-  const slug = decodeURIComponent(slash < 0 ? rest : rest.slice(0, slash));
+  let slug: string;
+  try {
+    slug = decodeURIComponent(slash < 0 ? rest : rest.slice(0, slash));
+  } catch {
+    return notFound(ctx, 'the app name in the URL is not valid percent-encoding');
+  }
   const tail = slash < 0 ? '' : rest.slice(slash + 1);
 
   if (!slug) return notFound(ctx, 'no app named in the URL');
@@ -243,7 +248,13 @@ function safeAppHeaders(s: Services, app: AppRecord, headers: Record<string, str
 function serveStatic(s: Services, ctx: RequestCtx, app: AppRecord, tail: string): void {
   const { res } = ctx;
   const publicDir = join(s.apps.paths(app.id).bundle, 'public');
-  const rel = safeJoin(publicDir, decodeURIComponent(tail || 'index.html'));
+  let decodedTail: string;
+  try {
+    decodedTail = decodeURIComponent(tail || 'index.html');
+  } catch {
+    return notFound(ctx, `this app has no file at /${tail}`);
+  }
+  const rel = safeJoin(publicDir, decodedTail);
   let file = rel;
 
   if (file && existsSync(file) && statSync(file).isDirectory()) file = join(file, 'index.html');

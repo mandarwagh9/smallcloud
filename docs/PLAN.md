@@ -593,5 +593,42 @@ Two findings are documented limits rather than code fixes: the in-memory export 
 lack of zip64 (an archive over ~65,000 entries, reachable only with that many uploaded files). Both
 route large apps to `backup.sh`; see SECURITY.md.
 
+## Multi-agent audit, round four (2026-09-13)
+
+Five dimensions the earlier rounds did not cover: fuzzing the validator/path sanitizers, racing
+concurrent deploys against a live server, the MCP tool surface as a running server, isolation depth
+in the real Docker image, and the round-three diff. 12 agents, **5 confirmed, 2 refuted**, each
+reproduced before fixing.
+
+The critical one is, again, in the previous round's own fix -- a fourth face of the same
+node:sqlite theme:
+
+> **The round-three ATTACH guard was bypassable (high).** The guard skipped when an IPC message
+> carried `internal: true`, set only by the platform's export. But app code shares the host process
+> and holds the `process` global, so `process.emit('message', { t: 'sql', internal: true, sql:
+> 'ATTACH ...' })` forged that message and ran ATTACH unguarded -- then read the attached platform
+> tables through an ordinary `ctx.db` call. Reproduced: full account takeover again.
+
+Fixed by deleting the forgeable flag: `runSql` now guards unconditionally, and the export has its own
+`snapshot` message type whose `VACUUM INTO` SQL the host builds from a validated filename, never from
+the message. A forged snapshot message can now only vacuum an app's own db into its own data dir.
+
+The other four:
+
+| Severity | Problem | Fix |
+|---|---|---|
+| high | Under `SC_APP_UID` (the Docker image), every cold start synchronously `chown`-walked the app's *entire* data tree on the single control-plane thread, outside any timeout. One app with many uploaded files froze the whole instance for seconds. | The app child runs as the app user, so files it writes are already app-owned; only `data/` and `data/files/` need handing over, which is O(1). A one-time recursive re-own (for a root-owned restore) is gated by a `.sc-owned` marker that `restore.sh` clears. |
+| low | A case-only path collision (`Public/x` vs `public/x`) silently dropped a file on a case-insensitive FS. | Dedup and the path-conflict check now compare case-insensitively. |
+| low | Malformed percent-encoding in the app slug or a static path threw `URIError` -> 500, while the API path already returned a clean 400. | Both decode sites now catch and return 404/400. |
+| low | A redeploy racing an in-flight static download on Windows leaked a raw `EPERM` as 500. | The bundle rename maps `EPERM`/`EBUSY`/`EACCES` to a retryable `busy` deploy error. |
+
+Refuted and not acted on: "no secret-delete MCP tool" (the API has the endpoint; a tool gap is not a
+defect), and a claim that `smallcloud_deploy` returns an empty app on the stale-pin recreate path
+(it returns the new app).
+
+Also fixed a Windows-only test-teardown flake (`rmSync` racing a just-killed child's open db handle;
+now uses `rmSync` retries), and made the deploy rate limit configurable (`SC_DEPLOY_PER_HOUR`) so the
+growing suite does not trip it.
+
 **Still not done**: the rest of M5 -- a public landing/docs site, and the name, license and domain
 decisions, which are Mandar's calls (section 13). Plus streaming zip64 export.

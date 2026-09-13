@@ -1,7 +1,7 @@
 import { fork, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { mkdirSync, existsSync, chownSync, statSync, readdirSync } from 'node:fs';
+import { mkdirSync, existsSync, chownSync, statSync, readdirSync, writeFileSync } from 'node:fs';
 import type { Apps } from './apps.js';
 import type { RouteRequest, RouteResponse, User } from './types.js';
 
@@ -63,19 +63,24 @@ export class Runtime {
    * to the app's own directory. Running them in the control plane would hand an editor the
    * platform's filesystem access.
    */
-  async sql(
-    appId: string,
-    sql: string,
-    params: unknown[] = [],
-    opts: { internal?: boolean } = {},
-  ): Promise<{ rows?: unknown[]; changes?: number }> {
+  async sql(appId: string, sql: string, params: unknown[] = []): Promise<{ rows?: unknown[]; changes?: number }> {
     const out = await this.send<{ ok: boolean; result?: { rows?: unknown[]; changes?: number }; message?: string; timedOut?: boolean }>(
       appId,
-      (invokeId) => ({ t: 'sql', invokeId, sql, params, internal: opts.internal === true }),
+      (invokeId) => ({ t: 'sql', invokeId, sql, params }),
       () => ({ ok: false, message: `the query took longer than ${REQUEST_TIMEOUT_MS / 1000}s`, timedOut: true }),
     );
     if (!out.ok) throw new SqlError(out.message ?? 'query failed');
     return out.result ?? {};
+  }
+
+  /** Ask the app's own process to VACUUM INTO a plain filename in its data dir (for export). */
+  async snapshot(appId: string, dest: string): Promise<void> {
+    const out = await this.send<{ ok: boolean; message?: string }>(
+      appId,
+      (invokeId) => ({ t: 'snapshot', invokeId, dest }),
+      () => ({ ok: false, message: `snapshot took longer than ${REQUEST_TIMEOUT_MS / 1000}s` }),
+    );
+    if (!out.ok) throw new SqlError(out.message ?? 'snapshot failed');
   }
 
   /** Stop an app's process (called on redeploy, delete, timeout, and shutdown). */
@@ -148,7 +153,7 @@ export class Runtime {
     // The control plane creates these directories, so under SC_APP_UID they would belong to
     // the platform user and the app could not write its own database. Only data/ changes
     // hands: bundle/ stays owned by the platform and is read-only to the app.
-    this.handOverDataDir(paths.data);
+    this.handOverDataDir(paths.data, paths.files);
     const script = hostScriptPath();
 
     const child = fork(script, [], {
@@ -228,16 +233,32 @@ export class Runtime {
   }
 
   /** Give the app user ownership of its writable tree, when running with SC_APP_UID. */
-  private handOverDataDir(dir: string): void {
+  private handOverDataDir(dir: string, filesDir: string): void {
     const { appUid, appGid } = this.isolation;
     if (appUid === undefined || process.platform === 'win32') return;
     const gid = appGid ?? appUid;
-    const walk = (p: string) => {
-      chownSync(p, appUid, gid);
-      if (statSync(p).isDirectory()) for (const name of readdirSync(p)) walk(join(p, name));
-    };
     try {
-      walk(dir);
+      // The control plane creates data/ and data/files/ as root; the app process then runs AS
+      // the app user, so every file it writes (its db, its uploads) is already app-owned. Only
+      // those two directories need handing over, and that is O(1) -- not a recursive walk of
+      // every uploaded file on every cold start, which let one app with many files freeze the
+      // whole single-threaded control plane (that walk is synchronous and outside any timeout).
+      chownSync(dir, appUid, gid);
+      if (existsSync(filesDir)) chownSync(filesDir, appUid, gid);
+
+      // One case does need a full re-own: a restore extracts the tree as root, so its files are
+      // root-owned. That is a one-time event, gated by a marker so a normal start never walks.
+      // restore.sh deletes the marker to force exactly one recursive pass on the next start.
+      const marker = join(dir, '.sc-owned');
+      if (!existsSync(marker)) {
+        const walk = (pth: string) => {
+          chownSync(pth, appUid, gid);
+          if (statSync(pth).isDirectory()) for (const name of readdirSync(pth)) walk(join(pth, name));
+        };
+        walk(dir);
+        writeFileSync(marker, '');
+        chownSync(marker, appUid, gid);
+      }
     } catch (err) {
       // Not fatal on its own, but the app will fail to write, so make the reason findable.
       this.apps.log(dir, 'error', `could not hand ${dir} to uid ${appUid}: ${(err as Error).message}`);

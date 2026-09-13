@@ -31,5 +31,9 @@ tar -xzf "$ARCHIVE" -C "$DATA_DIR"
 find "$DATA_DIR" -name '*.db-wal' -delete
 find "$DATA_DIR" -name '*.db-shm' -delete
 
+# The restored files are owned by whoever ran this (root); drop the ownership marker so the
+# server re-chowns the tree to the app user once on its next start (see runtime handOverDataDir).
+find "$DATA_DIR" -name '.sc-owned' -delete
+
 echo "restored $ARCHIVE into $DATA_DIR"
 echo "start the server; if all is well you can remove the aside copy."

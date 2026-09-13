@@ -13,6 +13,7 @@ export interface Config {
   /** Per app, per IP, per minute. Defaults match the capacity targets in docs/PLAN.md NF2. */
   staticRpm: number;
   apiRpm: number;
+  deployPerHour: number;
 }
 
 export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
@@ -35,5 +36,6 @@ export function configFromEnv(env: NodeJS.ProcessEnv = process.env): Config {
     appGid: env.SC_APP_GID ? Number(env.SC_APP_GID) : undefined,
     staticRpm: Number(env.SC_STATIC_RPM || 3000),
     apiRpm: Number(env.SC_API_RPM || 1200),
+    deployPerHour: Number(env.SC_DEPLOY_PER_HOUR || 30),
   };
 }

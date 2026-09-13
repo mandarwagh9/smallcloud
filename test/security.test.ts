@@ -454,3 +454,51 @@ test('the rate limiter never forgives a key that is already at its limit', () =>
   // the blocked key must still be blocked -- eviction must not have reset it
   assert.equal(limiter.take('victim'), false, 'a blocked key was forgiven by eviction (limit bypass)');
 });
+
+// Round four: the round-three ATTACH guard had a caller-supplied `internal` bypass, and app
+// code shares this process, so it could forge the IPC message with process.emit("message", ...)
+// and run ATTACH unguarded. The bypass flag is gone; the guard is unconditional.
+test('app code cannot forge an internal IPC message to bypass the SQL guard', async () => {
+  const otherDb = h.services.apps.paths((await deploy(h, token, bundle({ 'app.json': '{"name":"r4-victim"}', 'api/x.js': 'export default () => ({ json: {} })' }))).id).db.replaceAll(String.fromCharCode(92), '/');
+  const platformDb = join(h.services.cfg.dataDir, 'platform.db').replaceAll(String.fromCharCode(92), '/');
+
+  for (const target of [platformDb, otherDb]) {
+    const { body } = await probe(
+      'forge-internal',
+      `try {
+        process.emit('message', { t: 'sql', invokeId: -1, internal: true, sql: ${JSON.stringify(`ATTACH DATABASE '${target}' AS p`)} });
+        return { json: { rows: ctx.db.all('select 1 from p.sqlite_master limit 1'), result: 'ATTACHED' } };
+      } catch (e) { return { json: { result: 'blocked', message: e.message } }; }`,
+    );
+    assert.equal(body.result, 'blocked', `forged internal ATTACH to ${target} was not blocked`);
+    assert.match(body.message, /no such table|ATTACH, DETACH and VACUUM/);
+  }
+});
+
+test('a malformed percent-encoded app URL is a clean 404, not a 500', async () => {
+  const app = await deploy(h, token, bundle({ 'app.json': '{"name":"r4-decode"}', 'public/index.html': 'hi' }));
+  // bad encoding in the slug position and in the static tail
+  for (const path of ['/a/%ZZ', `/a/${app.slug}/%E0%A4`, `/a/${app.slug}/bad%2`]) {
+    const res = await h.fetch(path, { token });
+    assert.ok(res.status === 404 || res.status === 400, `${path} returned ${res.status}`);
+  }
+});
+
+test('an app with many stored files still redeploys and serves (O(1) ownership handover)', async () => {
+  const app = await deploy(
+    h,
+    token,
+    bundle({
+      'app.json': '{"name":"r4-files"}',
+      'public/index.html': 'hi',
+      'api/seed.js': 'export default (req, ctx) => { for (let i = 0; i < 60; i++) ctx.files.put("f" + i + ".txt", String(i)); return { json: { n: ctx.files.list().length } }; }',
+    }),
+  );
+  const seeded = await h.json(`/a/${app.slug}/api/seed`, { token });
+  assert.equal(seeded.body.n, 60);
+  // redeploy (forces a fresh cold start and the ownership handover) and confirm it still works
+  const v2 = await deploy(h, token, bundle({ 'app.json': '{"name":"r4-files"}', 'public/index.html': 'v2', 'api/seed.js': 'export default (req, ctx) => ({ json: { n: ctx.files.list().length } })' }), app.id);
+  assert.equal(v2.version, 2);
+  const after = await h.json(`/a/${app.slug}/api/seed`, { token });
+  assert.equal(after.body.n, 60, 'uploaded files must survive a redeploy');
+});
