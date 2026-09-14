@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>smallcloud — a cloud for small software</title>
+<meta name="description" content="Your agent hands smallcloud a folder. It hands back a link you can send to someone. Hosting, a database, file storage, sign-in and sharing are already there.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Space+Grotesk:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap row">
+    <a class="brand" href="/"><svg class="mk" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="2.5" width="15" height="15" rx="2"></rect><rect x="6" y="6" width="8" height="8" rx="1" fill="currentColor" stroke="none"></rect></svg>smallcloud</a>
+    <nav>
+      <a href="docs.html">Docs</a>
+      <a href="docs.html#contract">App contract</a>
+      <a href="https://github.com/mandarwagh9/smallcloud">GitHub</a>
+      <a class="cta" href="docs.html">Get started</a>
+    </nav>
+  </div>
+</header>
+
+<main>
+  <section class="wrap block hero-block">
+    <div class="kicker"><span class="tick"></span>Self&#8209;hosted &nbsp;&#183;&nbsp; run it yourself &nbsp;&#183;&nbsp; for software with a few users</div>
+    <h1 class="hero">A cloud for small software.</h1>
+    <p class="lede serif">Your agent hands this server a folder. It hands back a link you can send to someone. Hosting, a database, file storage, sign&#8209;in and sharing are already there.</p>
+    <div style="display:flex;gap:12px;margin-top:32px;flex-wrap:wrap;">
+      <a class="btn btn-primary" href="docs.html">Get started
+        <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 10h11M11 6l4 4-4 4"></path></svg></a>
+      <a class="btn btn-ghost" href="https://github.com/mandarwagh9/smallcloud">View on GitHub</a>
+    </div>
+  </section>
+
+  <section class="wrap" style="padding-bottom:60px;">
+    <div class="term">
+      <div class="head"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="lbl">terminal</span></div>
+<pre><span class="c"># three lines from a folder to a link you can send</span>
+npx smallcloud login https://cloud.example.com
+npx smallcloud deploy ./standup
+<span class="c">#</span> <span class="o">&#8594;</span> <span class="g">https://cloud.example.com/a/standup</span>
+npx smallcloud share standup <span class="g">bob@example.com</span></pre>
+    </div>
+    <p class="muted" style="margin-top:14px;max-width:60ch;">Bob gets a link, signs in with his email, and uses the tool. Your app sees him as <code class="inline">ctx.user.email</code>.</p>
+  </section>
+
+  <section class="block">
+    <div class="wrap grid2">
+      <div>
+        <div class="kicker" style="margin-bottom:16px;">01 &nbsp;/&nbsp; What an app is</div>
+        <h2 class="sec">A folder. Nothing to provision.</h2>
+        <p class="muted" style="max-width:40ch;">No Dockerfile, no database to spin up, no auth library, no environment to wire. Three things, and the platform supplies the rest through one <code class="inline">ctx</code> object.</p>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:16px;">
+<pre class="code">standup/
+  app.json            <span class="c">{"name": "Standup Notes"}</span>
+  public/index.html   <span class="c">the frontend</span>
+  api/notes.js        <span class="c">one file per route</span></pre>
+<pre class="code"><span class="c">// api/notes.js</span>
+export default (req, ctx) =&gt; ({
+  json: ctx.db.all(
+    'select * from notes order by id desc'
+  )
+})</pre>
+      </div>
+    </div>
+  </section>
+
+  <section class="block">
+    <div class="wrap">
+      <div class="kicker" style="margin-bottom:16px;">02 &nbsp;/&nbsp; The ctx object</div>
+      <h2 class="sec" style="margin-bottom:26px;">Everything an app gets.</h2>
+      <div class="ctx-grid">
+        <div class="cell"><span class="n">ctx.db</span><p>This app&#8217;s own SQLite database &#8212; <code class="inline">run</code>, <code class="inline">get</code>, <code class="inline">all</code>, <code class="inline">exec</code>.</p></div>
+        <div class="cell"><span class="n">ctx.files</span><p>Per&#8209;app file storage &#8212; <code class="inline">put</code>, <code class="inline">get</code>, <code class="inline">list</code>, <code class="inline">delete</code>.</p></div>
+        <div class="cell"><span class="n">ctx.user</span><p>The signed&#8209;in person as <code class="inline">{email}</code>, or null on a public app.</p></div>
+        <div class="cell"><span class="n">ctx.env</span><p>Secrets the owner set &#8212; never checked into your code.</p></div>
+        <div class="cell"><span class="n">ctx.fetch</span><p>Outbound HTTP, with private and internal addresses blocked.</p></div>
+        <div class="cell"><span class="n">ctx.log</span><p>Writes to the app log, readable with <code class="inline">smallcloud logs</code>.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="block">
+    <div class="wrap grid2">
+      <div>
+        <div class="kicker" style="margin-bottom:16px;">03 &nbsp;/&nbsp; Sharing</div>
+        <h2 class="sec">Send a link. They sign in with email.</h2>
+        <p class="muted" style="max-width:36ch;">Roles are <code class="inline">user</code> (can open it) and <code class="inline">editor</code> (can also redeploy and manage sharing).</p>
+      </div>
+      <div>
+        <table class="share">
+          <tr><td class="who">bob@example.com</td><td class="get">just Bob, after he signs in</td></tr>
+          <tr><td class="who">domain:acme.com</td><td class="get">anyone with an email at that domain</td></tr>
+          <tr><td class="who">public</td><td class="get">anyone with the link, no sign&#8209;in</td></tr>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section class="block">
+    <div class="wrap grid2">
+      <div>
+        <div class="kicker" style="margin-bottom:16px;">04 &nbsp;/&nbsp; Built for agents</div>
+        <h2 class="sec">A tool your coding agent can drive.</h2>
+        <p class="muted" style="max-width:40ch;">smallcloud ships an MCP server, so an agent can deploy, share and debug with no human in the loop &#8212; <code class="inline">smallcloud_deploy</code>, <code class="inline">smallcloud_logs</code>, <code class="inline">smallcloud_db</code> and the rest.</p>
+      </div>
+      <div>
+<pre class="code">npx smallcloud mcp-install   <span class="c"># registers with Claude Code</span></pre>
+        <p class="muted" style="margin-top:14px;font-size:14px;">Point it at the <a href="docs.html#contract">app contract</a> &#8212; the one document an agent needs &#8212; and ask for a tool.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="block">
+    <div class="wrap">
+      <div class="kicker" style="margin-bottom:16px;">05 &nbsp;/&nbsp; What it deliberately is not</div>
+      <div class="grid2" style="gap:44px;">
+        <h2 class="sec" style="max-width:13ch;">Honest about its edges.</h2>
+        <ul class="nots">
+          <li><span class="no">no</span><span>Not a scale&#8209;out cloud. It is for software that will only ever have a few users.</span></li>
+          <li><span class="no">no</span><span>Not a place to let strangers deploy code. Open it only to people you would hand a shell.</span></li>
+          <li><span class="no">no</span><span>Not a code generator, and not a no&#8209;code builder. It is the deploy&#8209;and&#8209;share layer.</span></li>
+          <li><span class="no">no</span><span>No lock&#8209;in. <code class="inline">smallcloud export</code> hands back your source, database and files.</span></li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="block" style="text-align:center;padding:72px 0;">
+    <div class="wrap">
+      <div class="kicker" style="justify-content:center;">Get in</div>
+      <h2 class="sec" style="font-size:46px;margin:14px 0 26px;">Point your agent at it and ask for a tool.</h2>
+      <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
+        <a class="btn btn-primary" href="docs.html">Read the docs
+          <svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 10h11M11 6l4 4-4 4"></path></svg></a>
+        <a class="btn btn-ghost" href="https://github.com/mandarwagh9/smallcloud">View on GitHub</a>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <div class="wrap row">
+    <a class="brand" href="/" style="color:var(--faint);"><svg class="mk" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" style="color:var(--faint);"><rect x="2.5" y="2.5" width="15" height="15" rx="2"></rect><rect x="6" y="6" width="8" height="8" rx="1" fill="currentColor" stroke="none"></rect></svg>smallcloud</a>
+    <span>a cloud for small software</span>
+    <span class="links"><a href="docs.html">Docs</a><a href="docs.html#security">Security</a><a href="https://github.com/mandarwagh9/smallcloud">GitHub</a></span>
+  </div>
+</footer>
+
+</body>
+</html>
