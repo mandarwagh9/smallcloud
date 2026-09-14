@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>smallcloud docs</title>
+<meta name="description" content="How to build, deploy, share and run apps on smallcloud — the app contract, the CLI, the agent (MCP) interface, and the security model.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Space+Grotesk:wght@400;500;700&family=Space+Mono:wght@400;700&display=swap">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+<header class="nav">
+  <div class="wrap row">
+    <a class="brand" href="index.html"><svg class="mk" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2.5" y="2.5" width="15" height="15" rx="2"></rect><rect x="6" y="6" width="8" height="8" rx="1" fill="currentColor" stroke="none"></rect></svg>smallcloud</a>
+    <nav>
+      <a href="index.html">Home</a>
+      <a href="#security">Security</a>
+      <a href="https://github.com/mandarwagh9/smallcloud">GitHub</a>
+      <a class="cta" href="#quickstart">Quickstart</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap docs">
+  <aside class="toc">
+    <div class="t">Docs</div>
+    <a href="#quickstart">Quickstart</a>
+    <a href="#contract">What an app is</a>
+    <a href="#routes">Writing a route</a>
+    <a href="#frontend">The frontend</a>
+    <a href="#limits">Limits &amp; rules</a>
+    <a href="#sharing">Sharing &amp; access</a>
+    <a href="#cli">CLI reference</a>
+    <a href="#agents">For agents (MCP)</a>
+    <a href="#running">Running an instance</a>
+    <a href="#security">Security model</a>
+    <a href="#leaving">Exporting &amp; leaving</a>
+  </aside>
+
+  <main class="doc">
+    <h1 class="title">Documentation</h1>
+    <p class="lede" style="font-size:19px;margin-top:6px;">You hand smallcloud a folder. It gives you back a URL other people can open. The platform supplies hosting, a database, file storage, sign&#8209;in, sharing and secrets.</p>
+
+    <section id="quickstart">
+      <h2><span class="num">01</span>Quickstart</h2>
+      <p>Run an instance, then deploy a folder to it.</p>
+      <div class="code-wrap">
+<pre class="code"><span class="c"># run the server</span>
+git clone https://github.com/mandarwagh9/smallcloud &amp;&amp; cd smallcloud
+npm install
+cp .env.example .env        <span class="c"># then set SC_SECRET at least</span>
+npm run dev                 <span class="c"># http://localhost:8787</span></pre>
+      </div>
+      <div class="code-wrap">
+<pre class="code"><span class="c"># deploy a folder and share it</span>
+npx smallcloud login http://localhost:8787
+npx smallcloud deploy ./my-app
+<span class="c">#</span> <span class="k">&#8594;</span> http://localhost:8787/a/my-app
+npx smallcloud share my-app bob@example.com</pre>
+      </div>
+      <p class="muted">With no <code class="inline">RESEND_API_KEY</code> set, sign&#8209;in links are printed to the console and shown in the browser, so you can use it locally without a mail provider.</p>
+    </section>
+
+    <section id="contract">
+      <h2><span class="num">02</span>What an app is</h2>
+      <p>An app is a folder with a name, an optional frontend, and one file per API route.</p>
+      <table class="tbl wide">
+        <tr><td>app.json</td><td>required. <code class="inline">{"name": "Todo", "description": "..."}</code></td></tr>
+        <tr><td>public/index.html</td><td>the frontend (any HTML/CSS/JS). Required unless the app is API&#8209;only.</td></tr>
+        <tr><td>public/**</td><td>any other static assets.</td></tr>
+        <tr><td>api/&lt;route&gt;.js</td><td>one file per API route, an ES module.</td></tr>
+        <tr><td>api/_helpers.js</td><td>files starting with <code class="inline">_</code> are shared code, not routes.</td></tr>
+      </table>
+      <p>A request to <code class="inline">/a/&lt;slug&gt;/api/todos</code> runs <code class="inline">api/todos.js</code>. If there is no file for a route, <code class="inline">api/index.js</code> handles it (use it as a catch&#8209;all router). Each path segment is one component: it is percent&#8209;decoded, but a segment may not contain an encoded separator or <code class="inline">..</code> (that request is rejected with 400). If an identifier can contain a slash, put it in the query string.</p>
+    </section>
+
+    <section id="routes">
+      <h2><span class="num">03</span>Writing a route</h2>
+      <div class="code-wrap">
+<pre class="code">export default async function (req, ctx) {
+  if (req.method === 'POST') {
+    const { text } = req.json();
+    ctx.db.run('insert into todos (text, done) values (?, 0)', text);
+    return { json: { ok: true } };
+  }
+  return { json: ctx.db.all('select * from todos order by id desc') };
+}</pre>
+      </div>
+
+      <div class="subhead">req</div>
+      <table class="tbl">
+        <tr><td>req.method</td><td>GET, POST, ...</td></tr>
+        <tr><td>req.path</td><td>path inside the api, e.g. <code class="inline">/todos/12</code></td></tr>
+        <tr><td>req.route</td><td>first segment, selects the file: <code class="inline">todos</code></td></tr>
+        <tr><td>req.subpath</td><td>the rest: <code class="inline">/12</code></td></tr>
+        <tr><td>req.query</td><td>query string as an object</td></tr>
+        <tr><td>req.headers</td><td>a safe subset of request headers</td></tr>
+        <tr><td>req.body</td><td>body as a string, or null</td></tr>
+        <tr><td>req.json()</td><td>body parsed as JSON</td></tr>
+        <tr><td>req.bytes()</td><td>body as a Buffer (uploads)</td></tr>
+      </table>
+
+      <div class="subhead">ctx</div>
+      <table class="tbl">
+        <tr><td>ctx.db.run(sql, ...p)</td><td>write; returns <code class="inline">{changes, lastInsertRowid}</code></td></tr>
+        <tr><td>ctx.db.get(sql, ...p)</td><td>one row, or undefined</td></tr>
+        <tr><td>ctx.db.all(sql, ...p)</td><td>array of rows</td></tr>
+        <tr><td>ctx.db.exec(sql)</td><td>schema statements; use <code class="inline">create table if not exists</code> at the top of every route</td></tr>
+        <tr><td>ctx.files.put(name, data)</td><td>store a file (string or Buffer)</td></tr>
+        <tr><td>ctx.files.get / getText / list / delete</td><td>read as Buffer / string, list names, delete</td></tr>
+        <tr><td>ctx.user</td><td><code class="inline">{email}</code> of the signed&#8209;in person, or null on a public app</td></tr>
+        <tr><td>ctx.env</td><td>secrets the owner set (never in your code)</td></tr>
+        <tr><td>ctx.log(...)</td><td>writes to the app log, visible via <code class="inline">logs</code></td></tr>
+        <tr><td>ctx.fetch(url, init)</td><td>outbound HTTP; private/internal addresses are blocked</td></tr>
+      </table>
+      <p class="muted"><code class="inline">ctx.user</code> is the signed&#8209;in person whenever there is one; it is null only on a <code class="inline">public</code> app opened by someone who never signed in. Don&#8217;t use it as a permission check for who may open the app &#8212; smallcloud already did that before your code ran. <code class="inline">ctx.files</code> is capped per app (default 100&nbsp;MB and 10,000 files).</p>
+
+      <div class="subhead">What a route returns</div>
+      <table class="tbl">
+        <tr><td>a string</td><td>HTML, 200</td></tr>
+        <tr><td>{json: value}</td><td>JSON, 200</td></tr>
+        <tr><td>{status, headers, body}</td><td>exactly that</td></tr>
+        <tr><td>a Uint8Array / Buffer</td><td>raw bytes</td></tr>
+        <tr><td>nothing</td><td>204</td></tr>
+      </table>
+      <p class="muted">You may set <code class="inline">content-type</code>, <code class="inline">content-disposition</code>, <code class="inline">cache-control</code>, <code class="inline">location</code>, <code class="inline">etag</code>, <code class="inline">last-modified</code>, <code class="inline">vary</code>, <code class="inline">link</code> and any <code class="inline">x-*</code> header. Anything else is dropped and logged. An app cannot set <code class="inline">set-cookie</code> &#8212; apps share an origin with the platform, so keep per&#8209;visitor state in <code class="inline">ctx.db</code> keyed by <code class="inline">ctx.user.email</code>.</p>
+    </section>
+
+    <section id="frontend">
+      <h2><span class="num">04</span>The frontend</h2>
+      <p><code class="inline">public/index.html</code> is served at the app root. Call your API with a <strong>relative</strong> path so the app works at any URL:</p>
+      <div class="code-wrap"><pre class="code">const res = await fetch('api/todos');</pre></div>
+      <p>You may load libraries from a CDN in the browser. There is no build step: ship plain HTML/CSS/JS or ES modules.</p>
+    </section>
+
+    <section id="limits">
+      <h2><span class="num">05</span>Limits &amp; rules</h2>
+      <ul>
+        <li>Bundle: 5&nbsp;MB, 500 files max.</li>
+        <li>A request must finish in 10 seconds; the app gets 128&nbsp;MB of heap.</li>
+        <li><code class="inline">api/</code> code may not use npm packages in v1, and may not import these built&#8209;ins: <code class="inline">sqlite</code>, <code class="inline">fs</code>, <code class="inline">child_process</code>, <code class="inline">worker_threads</code>, <code class="inline">net</code>, <code class="inline">http</code>, <code class="inline">os</code>, <code class="inline">process</code>, <code class="inline">module</code>, <code class="inline">vm</code> (a deploy that references one is rejected). Use <code class="inline">ctx.db</code>, <code class="inline">ctx.files</code> and <code class="inline">ctx.fetch</code>. Safe built&#8209;ins like <code class="inline">crypto</code>, <code class="inline">path</code>, <code class="inline">url</code> and <code class="inline">buffer</code> are fine.</li>
+        <li>An app can read only its own folder and write only its own data. It cannot start processes.</li>
+        <li>Redeploying keeps the same URL, database and files. Deploy with the same <code class="inline">appId</code> to update.</li>
+      </ul>
+    </section>
+
+    <section id="sharing">
+      <h2><span class="num">06</span>Sharing &amp; access</h2>
+      <table class="tbl">
+        <tr><td>bob@example.com</td><td>one person, after they sign in</td></tr>
+        <tr><td>domain:example.com</td><td>anyone with an email at that domain</td></tr>
+        <tr><td>public</td><td>anyone with the link, no sign&#8209;in</td></tr>
+      </table>
+      <p>Roles are <code class="inline">user</code> (can open it) and <code class="inline">editor</code> (can also redeploy and manage sharing). The owner can additionally delete the app. Recipients sign in with an emailed, single&#8209;use link that expires in 15 minutes.</p>
+    </section>
+
+    <section id="cli">
+      <h2><span class="num">07</span>CLI reference</h2>
+      <table class="tbl">
+        <tr><td>smallcloud serve</td><td>run the server (reads .env / environment)</td></tr>
+        <tr><td>smallcloud login [url]</td><td>connect this machine to a server</td></tr>
+        <tr><td>smallcloud deploy &lt;dir&gt; [--app &lt;id&gt;]</td><td>deploy or update an app</td></tr>
+        <tr><td>smallcloud list</td><td>apps you own or that are shared with you</td></tr>
+        <tr><td>smallcloud open &lt;app&gt;</td><td>print an app&#8217;s URL</td></tr>
+        <tr><td>smallcloud share &lt;app&gt; &lt;who&gt; [role]</td><td>who = email &#124; domain:example.com &#124; public</td></tr>
+        <tr><td>smallcloud unshare &lt;app&gt; &lt;who&gt;</td><td>remove access</td></tr>
+        <tr><td>smallcloud logs &lt;app&gt; [--limit N]</td><td>read the app log</td></tr>
+        <tr><td>smallcloud db &lt;app&gt; "&lt;sql&gt;"</td><td>run SQL against the app&#8217;s database</td></tr>
+        <tr><td>smallcloud secrets set &lt;app&gt; KEY=value</td><td>set a secret; <code class="inline">secrets rm</code> to remove</td></tr>
+        <tr><td>smallcloud export &lt;app&gt; [file.zip]</td><td>download source, database and files</td></tr>
+        <tr><td>smallcloud tokens</td><td>list agent tokens; <code class="inline">tokens rm &lt;id&gt;</code> to revoke</td></tr>
+        <tr><td>smallcloud contract</td><td>print the app contract</td></tr>
+        <tr><td>smallcloud mcp / mcp-install</td><td>run the MCP server / register it with Claude Code</td></tr>
+      </table>
+    </section>
+
+    <section id="agents">
+      <h2><span class="num">08</span>For agents (MCP)</h2>
+      <p>smallcloud ships an MCP server, so a coding agent can deploy, share and debug without a human in the loop.</p>
+      <div class="code-wrap">
+<pre class="code">npx smallcloud login https://cloud.example.com
+npx smallcloud mcp-install        <span class="c"># registers with Claude Code</span></pre>
+      </div>
+      <p>The agent then has <code class="inline">smallcloud_deploy</code>, <code class="inline">smallcloud_share</code>, <code class="inline">smallcloud_logs</code>, <code class="inline">smallcloud_source</code>, <code class="inline">smallcloud_db</code>, <code class="inline">smallcloud_secret_set</code>, <code class="inline">smallcloud_export</code> and the rest. The whole contract above is the one document it needs; it is also served at <code class="inline">GET /v1/contract</code> and printed by <code class="inline">smallcloud contract</code>.</p>
+    </section>
+
+    <section id="running">
+      <h2><span class="num">09</span>Running an instance</h2>
+      <p>One container and one volume. Set at least <code class="inline">SC_SECRET</code>; set <code class="inline">RESEND_API_KEY</code> so magic links can be emailed in production.</p>
+      <div class="code-wrap">
+<pre class="code">export SC_BASE_URL=https://cloud.example.com
+export SC_SECRET=$(openssl rand -hex 32)
+export RESEND_API_KEY=...        <span class="c"># for magic links</span>
+docker compose up -d             <span class="c"># includes Caddy for TLS</span></pre>
+      </div>
+      <table class="tbl">
+        <tr><td>SC_BASE_URL</td><td>the public URL of the instance</td></tr>
+        <tr><td>SC_SECRET</td><td>32 random bytes; encrypts secrets at rest. Back it up. Required in production.</td></tr>
+        <tr><td>RESEND_API_KEY</td><td>mail provider for sign&#8209;in links. Required in production.</td></tr>
+        <tr><td>SC_ALLOWED_EMAILS</td><td>allowlist of who may sign in at all (recommended on private instances)</td></tr>
+        <tr><td>SC_APP_UID / SC_APP_GID</td><td>run apps as a separate OS user (the kernel backstop; on by default in the Docker image)</td></tr>
+        <tr><td>SC_TRUST_PROXY</td><td>set to 1 behind a TLS proxy so rate limits see real client IPs</td></tr>
+      </table>
+      <p class="muted">See <code class="inline">RUNBOOK.md</code> in the repo for backups, upgrades and troubleshooting. Requires Node &#8805; 22.15 (see the security model below).</p>
+    </section>
+
+    <section id="security">
+      <h2><span class="num">10</span>Security model</h2>
+      <p>smallcloud runs code your agents write, on your server, for a handful of people you name. Each app runs in its own Node process started with <code class="inline">--permission</code>, granted access only to that app&#8217;s directory. App code is treated as <strong>hostile and confined</strong>; recipients are ordinary, untrusted web visitors; only people you give an account can deploy at all.</p>
+
+      <div class="subhead">What is enforced</div>
+      <ul>
+        <li>An app cannot read files outside its own directory, read another app&#8217;s database, write outside its own data, spawn a process, or start a worker thread.</li>
+        <li>Apps receive no platform environment variables. <code class="inline">ctx.fetch</code> refuses localhost, link&#8209;local and private (RFC&nbsp;1918) addresses across encodings, and re&#8209;checks redirects.</li>
+        <li>A request over 10s is killed and the app recovers; an app crash never takes the control plane down.</li>
+        <li>Secrets are AES&#8209;256&#8209;GCM at rest, decrypted only when handed to an app, never returned by the API. API tokens are stored only as a SHA&#8209;256 hash and are revocable per token.</li>
+        <li>Sign&#8209;in is single&#8209;use magic links (15&nbsp;min) and 30&#8209;day HttpOnly, SameSite=Lax session cookies; form posts are same&#8209;origin checked.</li>
+      </ul>
+      <p class="muted">Every one of these has a test in <code class="inline">test/security.test.ts</code>.</p>
+
+      <div class="note warn">
+        <span class="h">The <code class="inline">node:sqlite</code> gap &#8212; read this before opening an instance.</span>
+        Node&#8217;s permission model does not cover the native file access inside <code class="inline">node:sqlite</code>: with <code class="inline">--permission</code> active, <code class="inline">fs.readFileSync</code> of the platform DB is denied, but opening it through <code class="inline">node:sqlite</code> is not. Three layers close it &#8212; a deploy&#8209;time guardrail (always), a load&#8209;time import block via <code class="inline">module.registerHooks</code> (<strong>Node &#8805; 22.15</strong>), and OS user separation via <code class="inline">SC_APP_UID</code> (the kernel backstop, on by default in the Docker image). On Node &lt; 22.15 with no <code class="inline">SC_APP_UID</code>, treat anyone who can deploy as having read access to the platform database.
+      </div>
+
+      <p><strong>Recommended production configuration:</strong> Node &#8805; 22.15 (the bundled Docker image) <strong>and</strong> <code class="inline">SC_APP_UID</code>/<code class="inline">SC_APP_GID</code> pointing at a user that cannot read <code class="inline">platform.db</code>. That combination does not depend on the permission model covering any particular builtin.</p>
+
+      <div class="subhead">Not defended in v1</div>
+      <ul>
+        <li><strong>Hostile deployers.</strong> <code class="inline">--permission</code> is a boundary, not a VM. Only let people you trust deploy; configure <code class="inline">SC_APP_UID</code> if that assumption weakens.</li>
+        <li><strong>Cross&#8209;app browser isolation.</strong> All apps share one origin (<code class="inline">/a/&lt;slug&gt;</code>), so treat apps on one instance as mutually trusting in the browser until per&#8209;app subdomains land.</li>
+        <li>DNS rebinding, raw sockets on old Node, side channels, and co&#8209;tenant CPU denial&#8209;of&#8209;service are documented, not fully mitigated. See <code class="inline">SECURITY.md</code> for the complete list.</li>
+      </ul>
+    </section>
+
+    <section id="leaving">
+      <h2><span class="num">11</span>Exporting &amp; leaving</h2>
+      <div class="code-wrap"><pre class="code">npx smallcloud export my-app</pre></div>
+      <p>A zip with your source, your SQLite database and your uploaded files. Nothing in an app is smallcloud&#8209;specific except the <code class="inline">ctx</code> object, which is about forty lines to reimplement. The export endpoint builds the zip in memory and is capped at 200&nbsp;MB per app; a larger app leaves via <code class="inline">scripts/backup.sh</code>, which streams to <code class="inline">tar</code>.</p>
+    </section>
+  </main>
+</div>
+
+<footer class="foot">
+  <div class="wrap row">
+    <a class="brand" href="index.html" style="color:var(--faint);"><svg class="mk" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" style="color:var(--faint);"><rect x="2.5" y="2.5" width="15" height="15" rx="2"></rect><rect x="6" y="6" width="8" height="8" rx="1" fill="currentColor" stroke="none"></rect></svg>smallcloud</a>
+    <span>a cloud for small software</span>
+    <span class="links"><a href="index.html">Home</a><a href="https://github.com/mandarwagh9/smallcloud">GitHub</a></span>
+  </div>
+</footer>
+
+</body>
+</html>
