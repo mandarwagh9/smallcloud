@@ -6,6 +6,10 @@
 [![Tests](https://img.shields.io/badge/tests-83%20passing-0f6f5c)](docs/PLAN.md)
 [![License](https://img.shields.io/badge/license-MIT-0f6f5c)](LICENSE)
 
+<p align="center">
+  <a href="https://smallcloud-site.vercel.app"><img src="docs/hero.jpg" alt="smallcloud — a cloud for small software" width="100%"></a>
+</p>
+
 A cloud for small software.
 
 Your agent hands this server a folder. It hands back a link you can send to someone.
