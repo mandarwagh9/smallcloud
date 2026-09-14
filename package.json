@@ -3,20 +3,43 @@
   "version": "0.1.0",
   "description": "A cloud for small software. Agents deploy a folder; people get a link.",
   "type": "module",
-  "license": "UNLICENSED",
-  "private": true,
+  "license": "MIT",
+  "author": "Mandar Wagh",
+  "homepage": "https://smallcloud-site.vercel.app",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mandarwagh9/smallcloud.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mandarwagh9/smallcloud/issues"
+  },
+  "keywords": [
+    "paas",
+    "self-hosted",
+    "deploy",
+    "sqlite",
+    "mcp",
+    "agents",
+    "cloud"
+  ],
   "engines": {
     "node": ">=22.15"
   },
   "bin": {
     "smallcloud": "./bin/smallcloud.mjs"
   },
+  "main": "./dist/cli.js",
+  "files": [
+    "bin",
+    "dist"
+  ],
   "scripts": {
     "dev": "node --env-file-if-exists=.env --no-warnings=ExperimentalWarning --import tsx src/cli.ts serve",
     "cli": "node --no-warnings=ExperimentalWarning --import tsx src/cli.ts",
     "test": "node --no-warnings=ExperimentalWarning --import tsx --test test/*.test.ts",
     "typecheck": "tsc --noEmit",
     "build": "tsc && node -e \"require('fs').copyFileSync('src/sandbox-host.mjs','dist/sandbox-host.mjs')\"",
+    "prepublishOnly": "npm run build",
     "start": "node --env-file-if-exists=.env --no-warnings=ExperimentalWarning dist/cli.js serve",
     "agents": "node --no-warnings=ExperimentalWarning --import tsx -e \"import('./src/contract.js').then(m=>require('fs').writeFileSync('AGENTS.md',m.CONTRACT))\"",
     "eval:cold-agent": "node --no-warnings=ExperimentalWarning --import tsx eval/cold-agent.mjs"
